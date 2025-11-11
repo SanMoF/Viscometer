@@ -22,7 +22,7 @@ void Stepper::setup(uint8_t dir_gpio, uint8_t step_gpio,
                     float min_freq, float max_accel)
 {
     degrees_per_step = deg_per_step;
-    deadband = deg_per_step * 1.0f;
+    deadband = deg_per_step;
     dt_sec = (float)dt_us / 1000000.0f;
     
     kp = proportional_gain;
@@ -125,4 +125,7 @@ void Stepper::stop()
     current_frequency = 0.0f;
     current_direction = 0;
     pwm_step.setFrequency(0.0f);
+}
+float Stepper::encoder(){
+    
 }

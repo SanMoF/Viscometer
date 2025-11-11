@@ -40,6 +40,8 @@ public:
     void moveToAngle(float angle);
     float getPosition();
     void stop();
+    float encoder();
+    
 };
 
 #endif // __STEPPER_H__
