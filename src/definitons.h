@@ -30,30 +30,30 @@ static const uint32_t dt = 50; // 10ms tick period in microseconds
 // ============================================================================
 
 // Stepper Motor Pins
-static const uint8_t STEPPER_UP_DIR_PIN = 33;   // GPIO output
-static const uint8_t STEPPER_UP_PWM_PIN = 18;   // PWM capable
-static const uint8_t STEPPER_ROT_DIR_PIN = 19;  // GPIO output
-static const uint8_t STEPPER_ROT_PWM_PIN = 25;  // PWM capable
+static const uint8_t STEPPER_UP_DIR_PIN = 33;   
+static const uint8_t STEPPER_UP_PWM_PIN = 18;   
+static const uint8_t STEPPER_ROT_DIR_PIN = 19;  
+static const uint8_t STEPPER_ROT_PWM_PIN = 25;  
 
 // BDC Motor (Spin) Pins
-uint8_t SPIN_MOTOR_PIN_A = 27;     // PWM capable
-uint8_t SPIN_MOTOR_PIN_B = 14;     // PWM capable
+uint8_t SPIN_MOTOR_PIN_A = 27;     
+uint8_t SPIN_MOTOR_PIN_B = 14;    
 
 // Pump Motor Pins
-static const uint8_t PUMP_PIN_A = 26;           // PWM capable (changed from 15 - conflicts)
-static const uint8_t PUMP_PIN_B = 13;           // PWM capable
+static const uint8_t PUMP_PIN_A = 26; 
+static const uint8_t PUMP_PIN_B = 13;          
 
 // Encoder Pins
-static const uint8_t ENCODER_PIN_A = 32;        // Input (changed from 16)
-static const uint8_t ENCODER_PIN_B = 35;        // Input (changed from 17)
+static const uint8_t ENCODER_PIN_A = 32;        
+static const uint8_t ENCODER_PIN_B = 35;        
 
 // Emergency Stop Pin
-static const uint8_t EMERGENCY_STOP_PIN = 5;   // GPIO output (changed from 8 - doesn't exist)
-static const uint8_t Buzz_PIN = 15;   // GPIO output (changed from 8 - doesn't exist)
+static const uint8_t EMERGENCY_STOP_PIN = 5;  
+static const uint8_t Buzz_PIN = 15;   
 
 // I2C Pins for Color Sensor (default ESP32 I2C)
-static const uint8_t I2C_SDA_PIN = 21;          // I2C SDA
-static const uint8_t I2C_SCL_PIN = 22;          // I2C SCL
+static const uint8_t I2C_SDA_PIN = 21;          
+static const uint8_t I2C_SCL_PIN = 22;          
 uint8_t Pins_rgb[3] = {4,16,17};
 uint8_t RGB_CH[3] = {6,7,8};
 
