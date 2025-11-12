@@ -1,128 +1,118 @@
+// ============================================================================
+// Stepper.cpp
+// ============================================================================
 #include "Stepper.h"
+#include <stdio.h>
 
 Stepper::Stepper()
+    : _timer_config(nullptr),
+      _step_pin(0),
+      _dir_pin(0),
+      _pwm_channel(0),
+      _current_frequency(0),
+      _direction(true),
+      _calculated_position(0),
+      _last_update_time(0),
+      _steps_per_revolution(200),
+      _target_position(0),
+      _is_moving(false)
 {
-    current_angle = 0.0f;
-    target_angle = 0.0f;
-    current_direction = 0;
-    current_frequency = 0.0f;
-    degrees_per_step = 1.8f;
-    max_frequency = 650.0f;
-    min_frequency = 5.0f;
-    max_acceleration = 1000.0f;
-    deadband = 0.9f;
-    dt_sec = 0.01f;
-    kp = 5.0f;
 }
 
-void Stepper::setup(uint8_t dir_gpio, uint8_t step_gpio,
-                    uint8_t pwm_channel, TimerConfig *timer_config,
-                    float deg_per_step, uint64_t dt_us,
-                    float proportional_gain, float max_freq,
-                    float min_freq, float max_accel)
+Stepper::~Stepper()
 {
-    degrees_per_step = deg_per_step;
-    deadband = deg_per_step * 1.0f;
-    dt_sec = (float)dt_us / 1000000.0f;
+    _stepperPWM.setDuty(0);
+}
+
+void Stepper::setup(uint8_t step_pin, uint8_t dir_pin, uint8_t pwm_channel, TimerConfig *timer_config, uint32_t steps_per_rev)
+{
+    _step_pin = step_pin;
+    _dir_pin = dir_pin;
+    _pwm_channel = pwm_channel;
+    _timer_config = timer_config;
+    _current_frequency = timer_config->frequency;
+    _steps_per_revolution = steps_per_rev;
     
-    kp = proportional_gain;
-    max_frequency = max_freq;
-    min_frequency = min_freq;
-    max_acceleration = max_accel;
-
-    dir_pin.setup(dir_gpio, GPIO);
-    pwm_step.setup(step_gpio, pwm_channel, timer_config);
-
-    current_angle = 0.0f;
-    target_angle = 0.0f;
-    current_frequency = 0.0f;
-
-    // Set PWM to fixed 50% duty cycle
-    pwm_step.setDuty(50.0f);
+    // Initialize PWM for STEP signal
+    _stepperPWM.setup(_step_pin, _pwm_channel, _timer_config, false);
+    _stepperPWM.setDuty(0);
+    
+    // Initialize DIR pin
+    _dirGPIO.setup(_dir_pin, GPIO_MODE_OUTPUT, GPIO_FLOATING);
+    _dirGPIO.set(_direction ? 1 : 0);
+    
+    _last_update_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    
+    printf("Stepper initialized: STEP=%d, DIR=%d, CH=%d, FREQ=%ld Hz, SPR=%ld\n",
+           _step_pin, _dir_pin, _pwm_channel, _current_frequency, _steps_per_revolution);
 }
 
-void Stepper::moveDegrees(float degrees)
+void Stepper::moveDegrees(float degrees, uint32_t frequency)
 {
-    target_angle = current_angle + degrees;
-}
-
-void Stepper::moveToAngle(float angle)
-{
-    target_angle = angle;
-}
-
-void Stepper::update()
-{
-    float error = target_angle - current_angle;
-    float abs_error = fabsf(error);
-
-    if (abs_error > deadband)
+    // Update position before starting new move
+    if (_is_moving)
     {
-        // Set direction based on error sign
-        current_direction = (error > 0.0f) ? 1 : -1;
-        dir_pin.set(current_direction == 1);
-
-        // Calculate desired frequency using proportional control
-        float desired_frequency = abs_error * kp;
+        uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        uint32_t elapsed_ms = current_time - _last_update_time;
+        int32_t steps_moved = (_current_frequency * elapsed_ms) / 1000;
         
-        // Constrain frequency to operating range
-        if (desired_frequency > max_frequency)
-            desired_frequency = max_frequency;
-        if (desired_frequency < min_frequency)
-            desired_frequency = min_frequency;
+        if (_direction)
+            _calculated_position += steps_moved;
+        else
+            _calculated_position -= steps_moved;
+    }
+    
+    // Convert degrees to steps
+    int32_t steps = (int32_t)((degrees / 360.0f) * _steps_per_revolution);
+    _target_position = _calculated_position + steps;
+    
+    // Set direction
+    _direction = (steps >= 0);
+    _dirGPIO.set(_direction ? 1 : 0);
+    
+    // Set frequency
+    _current_frequency = frequency;
+    _stepperPWM.setFrequency(frequency);
+    
+    // Start movement
+    _stepperPWM.setDuty(50.0f);
+    _is_moving = true;
+    _last_update_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    
+    printf("Moving %.2f degrees (%ld steps) at %ld Hz, target pos: %ld\n", 
+           degrees, steps, frequency, _target_position);
+}
 
-        // Apply acceleration limiting
-        float max_freq_change = max_acceleration * dt_sec;
-        float freq_diff = desired_frequency - current_frequency;
+int32_t Stepper::getPosition()
+{
+    if (_is_moving)
+    {
+        uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
+        uint32_t elapsed_ms = current_time - _last_update_time;
         
-        if (freq_diff > max_freq_change)
+        int32_t steps_moved = (_current_frequency * elapsed_ms) / 1000;
+        
+        int32_t new_position;
+        if (_direction)
+            new_position = _calculated_position + steps_moved;
+        else
+            new_position = _calculated_position - steps_moved;
+        
+        // Check if target reached
+        if ((_direction && new_position >= _target_position) ||
+            (!_direction && new_position <= _target_position))
         {
-            current_frequency += max_freq_change;
-        }
-        else if (freq_diff < -max_freq_change)
-        {
-            current_frequency -= max_freq_change;
+            _calculated_position = _target_position;
+            _stepperPWM.setDuty(0);
+            _is_moving = false;
+            printf("Target reached. Position: %ld\n", _calculated_position);
         }
         else
         {
-            current_frequency = desired_frequency;
-        }
-
-        // Set PWM frequency (this controls step rate)
-        pwm_step.setFrequency(current_frequency);
-
-        // Update position estimate based on actual frequency
-        float steps_per_tick = current_frequency * dt_sec;
-        float degrees_per_tick = steps_per_tick * degrees_per_step;
-
-        if (current_direction == 1)
-        {
-            current_angle += degrees_per_tick;
-        }
-        else
-        {
-            current_angle -= degrees_per_tick;
+            _calculated_position = new_position;
+            _last_update_time = current_time;
         }
     }
-    else
-    {
-        // Stop motor - reached target within deadband
-        current_direction = 0;
-        current_frequency = 0.0f;
-        pwm_step.setFrequency(0.0f);
-        current_angle = target_angle;
-    }
-}
-
-float Stepper::getPosition()
-{
-    return current_angle;
-}
-
-void Stepper::stop()
-{
-    target_angle = current_angle;
-    current_frequency = 0.0f;
-    current_direction = 0;
-    pwm_step.setFrequency(0.0f);
+    
+    return _calculated_position;
 }
