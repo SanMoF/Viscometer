@@ -1,39 +1,41 @@
+// ============================================================================
 // Stepper.h
-#ifndef __STEPPER_H__
-#define __STEPPER_H__
+// ============================================================================
+#ifndef STEPPER_H
+#define STEPPER_H
 
-#include "SimpleGPIO.h"
 #include "SimplePWM.h"
+#include "SimpleGPIO.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 class Stepper
 {
 private:
-    SimpleGPIO dir_pin;
-    SimplePWM pwm_step;
+    SimplePWM _stepperPWM;
+    SimpleGPIO _dirGPIO;
+    TimerConfig *_timer_config;
     
-    float degrees_per_step;
-    float max_frequency;
-    float min_frequency;
-    float deadband;
+    uint8_t _step_pin;
+    uint8_t _dir_pin;
+    uint8_t _pwm_channel;
+    uint32_t _current_frequency;
+    bool _direction;
     
-    float current_angle;
-    float target_angle;
-    int current_direction;
-    float current_frequency;
-    float dt_sec;
+    int32_t _calculated_position;
+    uint32_t _last_update_time;
+    uint32_t _steps_per_revolution;
     
-    
-    public:
-    Stepper();
-    
-    void setup(uint8_t dir_gpio, uint8_t step_gpio,
-        uint8_t pwm_channel, TimerConfig* timer_config,
-        float deg_per_step, uint64_t dt_us);
-        
-        void update();
-    void moveDegrees(float degrees);
-    float getPosition() ;
+    int32_t _target_position;
+    bool _is_moving;
 
+public:
+    Stepper();
+    ~Stepper();
+    
+    void setup(uint8_t step_pin, uint8_t dir_pin, uint8_t pwm_channel, TimerConfig *timer_config, uint32_t steps_per_rev);
+    void moveDegrees(float degrees, uint32_t frequency);
+    int32_t getPosition();
 };
 
-#endif // __STEPPER_H__
+#endif // STEPPER_H
