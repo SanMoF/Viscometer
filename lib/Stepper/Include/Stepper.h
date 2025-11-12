@@ -33,9 +33,21 @@ public:
     Stepper();
     ~Stepper();
     
-    void setup(uint8_t step_pin, uint8_t dir_pin, uint8_t pwm_channel, TimerConfig *timer_config, uint32_t steps_per_rev);
-    void moveDegrees(float degrees, uint32_t frequency);
-    int32_t getPosition();
+    void setup(uint8_t dir_gpio, uint8_t step_gpio,
+               uint8_t pwm_channel, TimerConfig* timer_config,
+               float deg_per_step, uint64_t dt_us,
+               float proportional_gain = 5.0f,
+               float max_freq = 650.0f,
+               float min_freq = 5.0f,
+               float max_accel = 1000.0f);
+    
+    void update();
+    void moveDegrees(float degrees);
+    void moveToAngle(float angle);
+    float getPosition();
+    void stop();
+    float encoder();
+    
 };
 
 #endif // STEPPER_H

@@ -26,25 +26,24 @@ Stepper::~Stepper()
 
 void Stepper::setup(uint8_t step_pin, uint8_t dir_pin, uint8_t pwm_channel, TimerConfig *timer_config, uint32_t steps_per_rev)
 {
-    _step_pin = step_pin;
-    _dir_pin = dir_pin;
-    _pwm_channel = pwm_channel;
-    _timer_config = timer_config;
-    _current_frequency = timer_config->frequency;
-    _steps_per_revolution = steps_per_rev;
+    degrees_per_step = deg_per_step;
+    deadband = deg_per_step;
+    dt_sec = (float)dt_us / 1000000.0f;
     
-    // Initialize PWM for STEP signal
-    _stepperPWM.setup(_step_pin, _pwm_channel, _timer_config, false);
-    _stepperPWM.setDuty(0);
-    
-    // Initialize DIR pin
-    _dirGPIO.setup(_dir_pin, GPIO_MODE_OUTPUT, GPIO_FLOATING);
-    _dirGPIO.set(_direction ? 1 : 0);
-    
-    _last_update_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    
-    printf("Stepper initialized: STEP=%d, DIR=%d, CH=%d, FREQ=%ld Hz, SPR=%ld\n",
-           _step_pin, _dir_pin, _pwm_channel, _current_frequency, _steps_per_revolution);
+    kp = proportional_gain;
+    max_frequency = max_freq;
+    min_frequency = min_freq;
+    max_acceleration = max_accel;
+
+    dir_pin.setup(dir_gpio, GPIO);
+    pwm_step.setup(step_gpio, pwm_channel, timer_config);
+
+    current_angle = 0.0f;
+    target_angle = 0.0f;
+    current_frequency = 0.0f;
+
+    // Set PWM to fixed 50% duty cycle
+    pwm_step.setDuty(50.0f);
 }
 
 void Stepper::moveDegrees(float degrees, uint32_t frequency)
@@ -115,4 +114,7 @@ int32_t Stepper::getPosition()
     }
     
     return _calculated_position;
+}
+float Stepper::encoder(){
+    
 }
