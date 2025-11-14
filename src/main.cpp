@@ -6,41 +6,43 @@
 #include "QuadratureEncoder.h"
 #include "PID_CAYETANO.h"
 #include "Viscometer.h"
+#include <stdio.h>
+#include "esp_timer.h"
 
-// Timer ISR
 SimpleTimer timer;
-HBridge Motor;
-PID_CAYETANO PID;
-QuadratureEncoder Encoder;
+Viscometer visco1;
+
 uint64_t dt = 20000;
+
 static void IRAM_ATTR timerinterrupt(void *arg)
 {
     timer.setInterrupt();
 }
 
+static TimerConfig Motor_Timer{
+    .timer = LEDC_TIMER_0,
+    .frequency = 650,
+    .bit_resolution = LEDC_TIMER_10_BIT,
+    .mode = LEDC_LOW_SPEED_MODE
+};
+
 extern "C" void app_main()
 {
-    //PINS
-    uint8_t Encoder_PINs[2] = {16,17};
-    uint8_t Motor_Pins[2] = {32,33};
-    uint8_t motor_ch [2] = {0,1};
-
-    // Disable watchdog
     esp_task_wdt_deinit();
-    float gains[3] = {0.1f,1.0f,0.0f};
-    float error, u, ref, current;
-    // Timer setup
-    PID.setup(gains,dt);
     timer.setup(timerinterrupt, "MainTimer");
     timer.startPeriodic(dt);
-    Encoder.setup(Encoder_PINs,0.34);
-    Motor.setup(Motor_Pins, motor_ch);
-    
+
+    uint8_t Encoder_PINs[2] = {16, 17};
+    uint8_t Motor_Pins[2] = {14, 27};
+    uint8_t motor_ch[2] = {0, 1};
+
+    visco1.setup(Motor_Pins, motor_ch, Encoder_PINs, Motor_Timer);
+
     while (1)
     {
         if (timer.interruptAvailable())
-        {   
-            
-        } // timer tick
-    } // while(1)
+        {
+            visco1.measure();
+        }
+    }
 }
