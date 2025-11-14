@@ -5,6 +5,7 @@
 #include "Hbridge.h"
 #include "QuadratureEncoder.h"
 #include "PID_CAYETANO.h"
+#include "Viscometer.h"
 
 // Timer ISR
 SimpleTimer timer;
@@ -40,7 +41,6 @@ extern "C" void app_main()
         if (timer.interruptAvailable())
         {   
             
-            u = PID.computedU(error);     
         } // timer tick
     } // while(1)
 }
