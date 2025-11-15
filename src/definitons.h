@@ -8,8 +8,6 @@
 #include <stdint.h>
 #include "SimpleTimer.h"
 #include "SimpleGPIO.h"
-#include "HBridge.h"
-#include "BDCMotor.h"
 #include "SimplePWM.h"
 #include "Stepper.h"
 #include "QuadratureEncoder.h"
@@ -110,9 +108,7 @@ static float PID_GAINS[3] = {0.1f, 1.0f, 0.0f}; // Kp, Ki, Kd
 static SimpleTimer timer;
 static Stepper Stepper_Up;
 static Stepper Stepper_Rot;
-static HBridge MotorS;
 
-static HBridge Pump;
 static QuadratureEncoder enco;
 static PID_CAYETANO PID;
 static SimpleUART UART_MESSAGE(115200);
