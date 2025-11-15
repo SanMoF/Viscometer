@@ -36,16 +36,19 @@ extern "C" void app_main()
     uint8_t Encoder_PINs[2] = {16, 17};
     uint8_t Motor_Pins[2] = {14, 27};
     uint8_t motor_ch[2] = {0, 1};
+    uint8_t ADC_PIN = 34;
 
-    visco1.setup(Motor_Pins, motor_ch, Encoder_PINs, &Motor_Timer, dt);
+    visco1.setup(Motor_Pins, motor_ch, Encoder_PINs, &Motor_Timer, dt,ADC_PIN );
 
     timer.startPeriodic(dt);
-
+    float speed = 0.0f;
     while (1)
     {
         if (timer.interruptAvailable())
         {
-            visco1.measure();
+            ViscometerReading visc_read = visco1.measure();
+            printf("Speed: %.2f RPM, ADC: %.2f\n", visc_read.rpm, visc_read.viscosity);
+
         }
     }
 }
