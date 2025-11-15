@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include "SimpleTimer.h"
 #include "SimpleGPIO.h"
-#include "BDCMotor.h"
 #include "SimplePWM.h"
 #include "Stepper.h"
 #include "QuadratureEncoder.h"
