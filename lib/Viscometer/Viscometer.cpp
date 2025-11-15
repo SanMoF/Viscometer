@@ -23,6 +23,7 @@ void Viscometer::setup(uint8_t motorPins[2],
     float gains[3] = {0.1f, 1.0f, 0.0f};
     pid.setup(gains, (float)dt);
     motor.setSpeed(0.0f);
+
 }
 
 ViscometerReading Viscometer::measure()
@@ -36,4 +37,8 @@ ViscometerReading Viscometer::measure()
     m.rpm = currentSpeed * 0.17; // return in RPM
     m.viscosity = ADC.read(ADC_READ_RAW);// simple model
     return m;
+}
+void Viscometer::setTargetSpeed(float speed)
+{
+    motor.setSpeed(speed);
 }

@@ -38,6 +38,9 @@ SimpleTimer timer;
 Stepper Stepper_Up;
 Stepper Stepper_Rot;
 Viscometer visco1;
+SimpleUART UART(115200);
+PID_CAYETANO PID_STEPPER;
+float PID_GAINS[3] = {0.1f,1.0f,0.0f};
 // ============================================================================
 // PIN DEFINITIONS
 // ============================================================================
@@ -82,9 +85,7 @@ static TimerConfig Motor_Timer{
     .mode = LEDC_LOW_SPEED_MODE};
 
 static const float STEPPER_DEGREES_PER_STEP = 1.8f;
-
-
-
+char Buffer[32];
 
 
 #endif // __DEFINITIONS_H__
