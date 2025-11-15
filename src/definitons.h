@@ -6,28 +6,25 @@
 
 #include <stdio.h>
 #include <stdint.h>
+
+#include "driver/i2c.h"
+#include "esp_timer.h"
+#include "esp_task_wdt.h"
+
 #include "SimpleTimer.h"
 #include "SimpleGPIO.h"
 #include "SimplePWM.h"
+#include "SimpleUART.h"
+#include "SimpleADC.h"
+#include "Hbridge.h"
+
 #include "Stepper.h"
 #include "QuadratureEncoder.h"
 #include "PID_CAYETANO.h"
-#include "SimpleUART.h"
 #include "TCS34725.h"
 #include "SimpleRGB.h"
-#include "driver/i2c.h"
 #include "Viscometer.h"
-#include "SimpleGPIO.h"
-#include "SimpleADC.h"
-#include "SimplePWM.h"
-#include "SimpleTimer.h"
-#include "Hbridge.h"
-#include "QuadratureEncoder.h"
-#include "PID_CAYETANO.h"
-#include "Viscometer.h"
-#include <stdio.h>
-#include "esp_timer.h"
-#include "esp_task_wdt.h"
+
 
 // ============================================================================
 // TIMING CONFIGURATION
@@ -37,18 +34,10 @@ uint64_t dt = 20000;
 // ============================================================================
 // GLOBAL OBJECTS
 // ============================================================================
-static SimpleTimer timer;
-static Stepper Stepper_Up;
-static Stepper Stepper_Rot;
-
+SimpleTimer timer;
+Stepper Stepper_Up;
+Stepper Stepper_Rot;
 Viscometer visco1;
-
-static QuadratureEncoder enco;
-static PID_CAYETANO PID;
-static SimpleUART UART_MESSAGE(115200);
-static TCS34725 Color_sensor;
-static SimpleGPIO emg_relay, Buzz;
-SimpleRGB RGB;
 // ============================================================================
 // PIN DEFINITIONS
 // ============================================================================
@@ -66,6 +55,8 @@ static const uint8_t I2C_SCL_PIN = 22; // I2C SCL
 uint8_t Encoder_PINs[2] = {16, 17};
 uint8_t Motor_Pins[2] = {14, 27};
 uint8_t motor_ch[2] = {0, 1};
+uint8_t Stepper_UP_CH = 2;
+uint8_t Stepper_ROT_CH = 3;
 uint8_t ADC_PIN = 34;
 
 // ============================================================================
@@ -90,64 +81,10 @@ static TimerConfig Motor_Timer{
     .bit_resolution = LEDC_TIMER_10_BIT,
     .mode = LEDC_LOW_SPEED_MODE};
 
-
 static const float STEPPER_DEGREES_PER_STEP = 1.8f;
-static const float ENCODER_DEGREES_PER_EDGE = 0.36445f;
 
-// ============================================================================
-// PID CONFIGURATION
-// ============================================================================
-static float PID_GAINS[3] = {0.1f, 1.0f, 0.0f}; // Kp, Ki, Kd
 
-// ============================================================================
-// COMMUNICATION VARIABLES
-// ============================================================================
 
-// Receive buffer
-static char rxbuf[128];
 
-// Sensor data (RGB color sensor)
-static uint16_t sensor_r = 0;
-static uint16_t sensor_g = 0;
-static uint16_t sensor_b = 0;
-static uint16_t sensor_c = 0;
-
-// Data to send to LabVIEW
-struct TelemetryData
-{
-    int R;
-    int G;
-    int B;
-    float pos_x;
-    float pos_y;
-    float speed;
-};
-static TelemetryData telemetry = {0, 0, 0, 0.0f, 0.0f, 0.0f};
-
-// Data received from LabVIEW
-struct ControlData
-{
-    float ref_rpms;
-    int emergency_stop;
-    int send_water;
-    float ref_pos_x;
-    float ref_pos_y;
-};
-static ControlData control = {0.0f, 0, 0, 0.0f, 0.0f};
-
-// State machine
-static int current_state = 0;
-
-// ============================================================================
-// STATE DEFINITIONS
-// ============================================================================
-enum SystemState
-{
-    STATE_ELEVATION = 0,
-    STATE_ROTATION = 1,
-    STATE_PUMP = 2,
-    STATE_VELOCITY_CONTROL = 3,
-    STATE_IDLE = 4
-};
 
 #endif // __DEFINITIONS_H__
