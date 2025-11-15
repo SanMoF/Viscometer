@@ -65,7 +65,7 @@ float PID_CAYETANO::computedU(float error)
     prev_error = error;
 
     // debug print (comment later)
-    printf("PID dbg: e=%.4f P=%.4f I=%.4f(Dint) D=%.4f u_tent=%.4f u=%.4f\n",error, P, _Ki*integral, D, u_tentative, u);
+    // printf("PID dbg: e=%.4f P=%.4f I=%.4f(Dint) D=%.4f u_tent=%.4f u=%.4f\n",error, P, _Ki*integral, D, u_tentative, u);
 
     return u;
 }

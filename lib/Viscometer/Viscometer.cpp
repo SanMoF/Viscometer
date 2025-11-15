@@ -15,23 +15,21 @@ Viscometer::~Viscometer()
 void Viscometer::setup(uint8_t motorPins[2],
                        uint8_t motorChannels[2],
                        uint8_t encoderPins[2],
-                       TimerConfig &timerCfg)
+                       TimerConfig* timerCfg, uint64_t dt)
 {
     motor.setup(motorPins, motorChannels, timerCfg);
     encoder.setup(encoderPins, 0.36445f);
-    
     float gains[3] = {0.1f, 1.0f, 0.0f};
-    uint64_t dt = 20000;
-    pid.setup(gains, dt);
-    
+    pid.setup(gains, (float) dt);
     motor.setSpeed(0.0f);
 }
+
 
 void Viscometer::measure()
 {
     currentSpeed = encoder.getSpeed();
     float error = targetSpeed - currentSpeed;
     float u = pid.computedU(error);
+    
     motor.setSpeed(u);
-    printf("SPEED: %f, ERROR: %f, U: %f\n", currentSpeed, error, u);
 }

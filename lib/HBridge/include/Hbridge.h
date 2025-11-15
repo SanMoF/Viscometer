@@ -3,18 +3,18 @@
 
 #include "SimplePWM.h"
 
+// Hbridge.h
 class HBridge
 {
+private:
+    SimplePWM PWM_CCLKW;
+    SimplePWM PWM_CLKW;
+
 public:
     HBridge();
-    void setup(uint8_t pwm_pin[], uint8_t pwm_channel[], TimerConfig motor_pwm_config);
+void setup(uint8_t pwm_pin[], uint8_t pwm_channel[], TimerConfig* motor_pwm_config);
     void setSpeed(float speed);
     void setStop();
-
-private:
-    SimplePWM PWM_CLKW;
-    SimplePWM PWM_CCLKW;
-    
 };
 
 #endif // _HBRIDGE_H
