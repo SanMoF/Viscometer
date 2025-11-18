@@ -69,7 +69,10 @@ void Stepper::moveDegrees(float degrees, uint32_t frequency)
     // Set direction
     _direction = (steps >= 0);
     _dirGPIO.set(_direction ? 1 : 0);
-    
+    if (frequency < 100.0f)
+    frequency = 100.0f;
+    if (frequency > 2000.0f)
+    frequency = 2000.0f;
     // Set frequency
     _current_frequency = frequency;
     _stepperPWM.setFrequency(frequency);

@@ -51,13 +51,7 @@ extern "C" void app_main()
                 if ((error_up > DEGREE_DEADBAND) || (error_up < -DEGREE_DEADBAND))
                 {
                     float u = PID_STEPPER.computedU(error_up);
-                    if (u < MIN_FREQ)
-                        u = MIN_FREQ;
-                    if (u > MAX_FREQ)
-                        u = MAX_FREQ;
-
                     Stepper_Up.moveDegrees(error_up, (uint32_t)u);
-
                     printf("Mode 2 - Stepper UP -> Set: %.2f°, Pos: %.2f°, Err: %.2f°, Freq: %.0f Hz\n",
                            ref, current_degrees_up, error_up, u);
                 }
