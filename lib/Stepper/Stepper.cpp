@@ -32,17 +32,17 @@ void Stepper::setup(uint8_t step_pin, uint8_t dir_pin, uint8_t pwm_channel, Time
     _timer_config = timer_config;
     _current_frequency = timer_config->frequency;
     _steps_per_revolution = steps_per_rev;
-    
+
     // Initialize PWM for STEP signal
     _stepperPWM.setup(_step_pin, _pwm_channel, _timer_config, false);
     _stepperPWM.setDuty(0);
-    
+
     // Initialize DIR pin
     _dirGPIO.setup(_dir_pin, GPIO_MODE_OUTPUT, GPIO_FLOATING);
     _dirGPIO.set(_direction ? 1 : 0);
-    
+
     _last_update_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    
+
     printf("Stepper initialized: STEP=%d, DIR=%d, CH=%d, FREQ=%ld Hz, SPR=%ld\n",
            _step_pin, _dir_pin, _pwm_channel, _current_frequency, _steps_per_revolution);
 }
@@ -55,34 +55,34 @@ void Stepper::moveDegrees(float degrees, uint32_t frequency)
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
         uint32_t elapsed_ms = current_time - _last_update_time;
         int32_t steps_moved = (_current_frequency * elapsed_ms) / 1000;
-        
+
         if (_direction)
             _calculated_position += steps_moved;
         else
             _calculated_position -= steps_moved;
     }
-    
+
     // Convert degrees to steps
     int32_t steps = (int32_t)((degrees / 360.0f) * _steps_per_revolution);
     _target_position = _calculated_position + steps;
-    
+
     // Set direction
     _direction = (steps >= 0);
     _dirGPIO.set(_direction ? 1 : 0);
     if (frequency < 100.0f)
-    frequency = 100.0f;
+        frequency = 100.0f;
     if (frequency > 2000.0f)
-    frequency = 2000.0f;
+        frequency = 2000.0f;
     // Set frequency
     _current_frequency = frequency;
     _stepperPWM.setFrequency(frequency);
-    
+
     // Start movement
     _stepperPWM.setDuty(50.0f);
     _is_moving = true;
     _last_update_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
-    
-    printf("Moving %.2f degrees (%ld steps) at %ld Hz, target pos: %ld\n", 
+
+    printf("Moving %.2f degrees (%ld steps) at %ld Hz, target pos: %ld\n",
            degrees, steps, frequency, _target_position);
 }
 
@@ -92,15 +92,15 @@ int32_t Stepper::getPosition()
     {
         uint32_t current_time = xTaskGetTickCount() * portTICK_PERIOD_MS;
         uint32_t elapsed_ms = current_time - _last_update_time;
-        
+
         int32_t steps_moved = (_current_frequency * elapsed_ms) / 1000;
-        
+
         int32_t new_position;
         if (_direction)
             new_position = _calculated_position + steps_moved;
         else
             new_position = _calculated_position - steps_moved;
-        
+
         // Check if target reached
         if ((_direction && new_position >= _target_position) ||
             (!_direction && new_position <= _target_position))
@@ -116,6 +116,6 @@ int32_t Stepper::getPosition()
             _last_update_time = current_time;
         }
     }
-    
+
     return _calculated_position;
 }
