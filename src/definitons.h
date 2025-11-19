@@ -56,10 +56,12 @@ static const uint8_t I2C_SCL_PIN = 22; // I2C SCL
 
 uint8_t Encoder_PINs[2] = {16, 17};
 uint8_t Motor_Pins[2] = {14, 27};
+uint8_t Pump_PIns[2] = {23,26};
+uint8_t ADC_PIN = 34;
+
 uint8_t motor_ch[2] = {0, 1};
 uint8_t Stepper_UP_CH = 2;
 uint8_t Stepper_ROT_CH = 3;
-uint8_t ADC_PIN = 34;
 
 // ============================================================================
 // PWM TIMER CONFIGURATIONS
