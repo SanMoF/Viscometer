@@ -30,6 +30,158 @@
 // ============================================================================
 uint64_t dt = 20000;
 
+//State machine
+
+enum class ViscometerState : uint8_t {
+
+    // -------------------------------------------------------------------------
+    // POWER SEQUENCE
+    // -------------------------------------------------------------------------
+    POWER_OFF = 0,  
+    // LabVIEW must show: "Power Off"
+    // ESP: everything de-energized, relay OFF.
+    // Telemetry: relay=0, motors=0, pump=0.
+
+    POWER_ON,
+    // LabVIEW shows: "Power On – Running safety checks"
+    // ESP: energize power relay, test sensors, verify encoder OK.
+    // Telemetry: relay=1
+
+
+    // -------------------------------------------------------------------------
+    // INITIALIZATION / HOMING
+    // -------------------------------------------------------------------------
+    HOMING,
+    // LabVIEW shows: "Homing all axes"
+    // ESP: home rotation stepper + vertical screw stepper.
+    // Telemetry: motor_pos_rot, motor_pos_z, homing_ok.
+
+
+    // -------------------------------------------------------------------------
+    // SAMPLE IDENTIFICATION
+    // -------------------------------------------------------------------------
+    READ_COLOR_TAG,
+    // LabVIEW: "Reading color tag"
+    // ESP: Color sensor measurement → identifies viscosity target range.
+    // Telemetry: raw_color, decoded_color, target_visc_min/max.
+
+    INDICATE_COLOR_LED,
+    // LabVIEW: "Indicating color"
+    // ESP: Send color to the labview
+    // Telemetry: color_led=<R/G/B>
+
+
+    // -------------------------------------------------------------------------
+    // POSITIONING FOR MEASUREMENT
+    // -------------------------------------------------------------------------
+    MOVE_TO_MEASURE_POS,
+    // LabVIEW: "Rotating to measurement station"
+    // ESP: rotate turret to assigned measurement cup.
+    // Telemetry: rot_pos_deg, at_measure_pos=1/0
+
+
+    // -------------------------------------------------------------------------
+    // VERTICAL SPINDLE MOVEMENT
+    // -------------------------------------------------------------------------
+    LOWER_SPINDLE,
+    // LabVIEW: "Lowering spindle"
+    // ESP: move Z-stepper downward until contact depth.
+    // Telemetry: z_pos_mm, load_sensor_value, in_liquid=1/0
+
+    RAISE_SPINDLE,
+    // LabVIEW: "Raising spindle"
+    // ESP: return Z-axis to zero height after measurement or cleaning.
+    // Telemetry: z_pos_mm
+
+
+    // -------------------------------------------------------------------------
+    // FIRST MEASUREMENT CYCLE
+    // -------------------------------------------------------------------------
+    MEASURE_VISCOSITY,
+    // LabVIEW: "Measuring viscosity"
+    // ESP: spin spindle, run PID RPM control, compute viscosity from torque/RPM curve.
+    // Telemetry: rpm, torque, viscosity_raw, viscosity_filtered
+
+    EVALUATE_RESULT,
+    // LabVIEW: "Evaluating viscosity result"
+    // ESP: compare viscosity to target range.
+    // Telemetry: visc, target_min, target_max, in_range=1/0
+
+
+    // -------------------------------------------------------------------------
+    // DOSING LOOP
+    // -------------------------------------------------------------------------
+    DOSE_WATER,
+    // LabVIEW: "Dosing water"
+    // ESP: run pump for computed milliseconds.
+    // Telemetry: pump=1, dose_ms, fluid_temp
+
+    STIR_HIGH_RPM,
+    // LabVIEW: "Stirring (High RPM)"
+    // ESP: maintain high RPM ≥ 120 for 30 s.
+    // Telemetry: rpm, current_motor, timer_remaining
+
+    STIR_HOLD_DELAY,
+    // LabVIEW: "Waiting/sta0bilizing mixture"
+    // ESP: 60-second wait with periodic checks.
+    // Telemetry: timer_remaining
+
+    RE_MEASURE,
+    // LabVIEW: "Re-measuring viscosity"
+    // ESP: run MEASURE_VISCOSITY again.
+    // Telemetry: viscosity_new, rpm, torque
+
+    CHECK_ADJUSTMENT_LOOP,
+    // LabVIEW: "Checking if additional dosing is needed"
+    // ESP: if (visc out of range AND loops < MAX) → return to DOSE_WATER.
+    // Telemetry: remaining_iterations, in_range=1/0
+
+
+    // -------------------------------------------------------------------------
+    // FINAL CLASSIFICATION
+    // -------------------------------------------------------------------------
+    ACCEPT_SAMPLE,
+    // LabVIEW: "Sample Accepted"
+    // ESP: pulse I/O line to Arduino for acceptance.
+    // Telemetry: accepted=1
+
+    REJECT_SAMPLE,
+    // LabVIEW: "Sample Rejected"
+    // ESP: pulse line for rejection.
+    // Telemetry: rejected=1
+
+
+    // -------------------------------------------------------------------------
+    // CLEANING PROCEDURE
+    // -------------------------------------------------------------------------
+    MOVE_TO_CLEAN_POS,
+    // LabVIEW: "Rotating to cleaning station"
+    // ESP: rotate turret to cleaning bath.
+    // Telemetry: rot_pos_deg, at_clean_pos
+
+    CLEANING_RINSE,
+    // LabVIEW: "Rinsing & Stirring inside water"
+    // ESP: submerge spindle, spin at moderate RPM.
+    // Telemetry: cleaning_rpm, rinse_time
+
+
+    EMERGENCY_STOP,
+    // LabVIEW: "EMERGENCY STOP"
+    // ESP: Immediately turn OFF motors, pump, relay.
+    // Telemetry: emergency=1
+
+    MAINTENANCE_MODE,
+    // LabVIEW: "Maintenance mode"
+    // ESP: low-level control of all actuators for diagnostics.
+    // Telemetry: depends on test type
+
+    CALIBRATE_SENSORS
+    // LabVIEW: "Calibrating sensors"
+    // ESP: calibration for encoder, load cell, color sensor, TOF.
+    // Telemetry: calibration_progress, calibration_ok
+};
+
+
 // ============================================================================
 // GLOBAL OBJECTS
 // ============================================================================

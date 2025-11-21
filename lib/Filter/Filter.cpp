@@ -34,17 +34,14 @@ void Filter::setup(const float b_arr[], const float a_arr[], unsigned char num_c
     else
         std::memset(_a, 0, na * sizeof(float));
 
-    // initialize states with provided initial values
     for (unsigned char i = 0; i < MAX_NUM_SIZE; ++i) _x[i] = x_init;
     for (unsigned char i = 0; i < MAX_DEN_SIZE; ++i) _y[i] = y_init;
 }
 
 float Filter::apply(float input_data)
 {
-    // if filter not configured, just return input
     if (_num_coeff[0] == 0 || _num_coeff[1] == 0) return input_data;
 
-    // shift X and Y arrays (right shift)
     for (int i = _num_coeff[0] - 1; i > 0; --i)
     {
         _x[i] = _x[i - 1];
@@ -54,10 +51,8 @@ float Filter::apply(float input_data)
         _y[i] = _y[i - 1];
     }
 
-    // store new input
     _x[0] = input_data;
 
-    // compute new output y[0] = sum(b[i]*x[i]) - sum_{i=1..na-1}(a[i]*y[i]) ; then divide by a[0] if needed
     float out = 0.0f;
 
     for (int i = 0; i < _num_coeff[0]; ++i)
@@ -70,7 +65,6 @@ float Filter::apply(float input_data)
         out -= _a[i] * _y[i];
     }
 
-    // normalize by a[0] if not 1 (avoid division by zero)
     if (_a[0] != 0.0f && _a[0] != 1.0f)
     {
         out /= _a[0];
