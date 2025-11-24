@@ -30,14 +30,19 @@
 // ============================================================================
 uint64_t dt = 20000;
 
-//State machine
-
-enum class ViscometerState : uint8_t {
+// State machine
+enum Main_l
+{
+    MANUAL = 0,
+    AUTO = 1
+};
+enum ViscometerState
+{
 
     // -------------------------------------------------------------------------
     // POWER SEQUENCE
     // -------------------------------------------------------------------------
-    POWER_OFF = 0,  
+    POWER_OFF = 0,
     // LabVIEW must show: "Power Off"
     // ESP: everything de-energized, relay OFF.
     // Telemetry: relay=0, motors=0, pump=0.
@@ -47,7 +52,6 @@ enum class ViscometerState : uint8_t {
     // ESP: energize power relay, test sensors, verify encoder OK.
     // Telemetry: relay=1
 
-
     // -------------------------------------------------------------------------
     // INITIALIZATION / HOMING
     // -------------------------------------------------------------------------
@@ -55,7 +59,6 @@ enum class ViscometerState : uint8_t {
     // LabVIEW shows: "Homing all axes"
     // ESP: home rotation stepper + vertical screw stepper.
     // Telemetry: motor_pos_rot, motor_pos_z, homing_ok.
-
 
     // -------------------------------------------------------------------------
     // SAMPLE IDENTIFICATION
@@ -70,7 +73,6 @@ enum class ViscometerState : uint8_t {
     // ESP: Send color to the labview
     // Telemetry: color_led=<R/G/B>
 
-
     // -------------------------------------------------------------------------
     // POSITIONING FOR MEASUREMENT
     // -------------------------------------------------------------------------
@@ -78,7 +80,6 @@ enum class ViscometerState : uint8_t {
     // LabVIEW: "Rotating to measurement station"
     // ESP: rotate turret to assigned measurement cup.
     // Telemetry: rot_pos_deg, at_measure_pos=1/0
-
 
     // -------------------------------------------------------------------------
     // VERTICAL SPINDLE MOVEMENT
@@ -93,7 +94,6 @@ enum class ViscometerState : uint8_t {
     // ESP: return Z-axis to zero height after measurement or cleaning.
     // Telemetry: z_pos_mm
 
-
     // -------------------------------------------------------------------------
     // FIRST MEASUREMENT CYCLE
     // -------------------------------------------------------------------------
@@ -106,7 +106,6 @@ enum class ViscometerState : uint8_t {
     // LabVIEW: "Evaluating viscosity result"
     // ESP: compare viscosity to target range.
     // Telemetry: visc, target_min, target_max, in_range=1/0
-
 
     // -------------------------------------------------------------------------
     // DOSING LOOP
@@ -136,7 +135,6 @@ enum class ViscometerState : uint8_t {
     // ESP: if (visc out of range AND loops < MAX) → return to DOSE_WATER.
     // Telemetry: remaining_iterations, in_range=1/0
 
-
     // -------------------------------------------------------------------------
     // FINAL CLASSIFICATION
     // -------------------------------------------------------------------------
@@ -150,7 +148,6 @@ enum class ViscometerState : uint8_t {
     // ESP: pulse line for rejection.
     // Telemetry: rejected=1
 
-
     // -------------------------------------------------------------------------
     // CLEANING PROCEDURE
     // -------------------------------------------------------------------------
@@ -163,7 +160,6 @@ enum class ViscometerState : uint8_t {
     // LabVIEW: "Rinsing & Stirring inside water"
     // ESP: submerge spindle, spin at moderate RPM.
     // Telemetry: cleaning_rpm, rinse_time
-
 
     EMERGENCY_STOP,
     // LabVIEW: "EMERGENCY STOP"
@@ -181,7 +177,6 @@ enum class ViscometerState : uint8_t {
     // Telemetry: calibration_progress, calibration_ok
 };
 
-
 // ============================================================================
 // GLOBAL OBJECTS
 // ============================================================================
@@ -191,7 +186,20 @@ Stepper Stepper_Rot;
 Viscometer visco1;
 SimpleUART UART(115200);
 PID_CAYETANO PID_STEPPER;
+TCS34725 Color_sensor;
+
+// Consts or variable definitions
 float PID_GAINS[3] = {0.1f, 1.0f, 0.0f};
+uint16_t R, G, B, C;
+// Useful variables
+int len = 0;
+int mode = 0;
+float ref = 0.0f;      // incoming reference (mode-dependent)
+char Buffer[64] = {0}; // ensure this exists (or use the one in your header)
+const float DEGREE_DEADBAND = 1.0f;
+const float MIN_FREQ = 100.0f;
+const float MAX_FREQ = 2000.0f;
+ViscometerState Current_state = POWER_OFF;
 // ============================================================================
 // PIN DEFINITIONS
 // ============================================================================
@@ -208,9 +216,10 @@ static const uint8_t I2C_SCL_PIN = 22; // I2C SCL
 
 uint8_t Encoder_PINs[2] = {16, 17};
 uint8_t Motor_Pins[2] = {14, 27};
-uint8_t Pump_PIns[2] = {23,26};
+uint8_t Pump_PIns[2] = {23, 26};
 uint8_t ADC_PIN = 34;
 
+// PWM CHANNELS
 uint8_t motor_ch[2] = {0, 1};
 uint8_t Stepper_UP_CH = 2;
 uint8_t Stepper_ROT_CH = 3;

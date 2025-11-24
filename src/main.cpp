@@ -13,14 +13,7 @@ extern "C" void app_main()
     Stepper_Up.setup(STEPPER_UP_PWM_PIN, STEPPER_UP_DIR_PIN, Stepper_UP_CH, &PWM_STEPPER_UP_TIMER, STEPPER_DEGREES_PER_STEP);
     Stepper_Rot.setup(STEPPER_ROT_PWM_PIN, STEPPER_ROT_DIR_PIN, Stepper_ROT_CH, &PWM_STEPPER_ROT_TIMER, STEPPER_DEGREES_PER_STEP);
     timer.startPeriodic(dt);
-    // Useful variables
-    int len = 0;
-    int mode = 0;
-    float ref = 0.0f;      // incoming reference (mode-dependent)
-    char Buffer[64] = {0}; // ensure this exists (or use the one in your header)
-    const float DEGREE_DEADBAND = 1.0f;
-    const float MIN_FREQ = 100.0f;
-    const float MAX_FREQ = 2000.0f;
+
     while (1)
     {
         if (timer.interruptAvailable())
@@ -30,19 +23,50 @@ extern "C" void app_main()
             if (len)
             {
                 UART.read(Buffer, len);
-                sscanf(Buffer, "%d,%f", &mode, &ref);
+                // Scan and change mode swithc between automatic or manual
+                // sscanf(Buffer, "%d,%f", &mode, &ref);
             }
-            if (mode == 0)
+
+            switch (Current_state)
             {
-                ViscometerReading visc_read = visco1.measure();
-                printf("Speed: %.2f RPM, ADC: %.2f\n", visc_read.rpm, visc_read.viscosity);
-            }
-            else if (mode == 1)
-            {
-                visco1.setTargetSpeed(100.0f);
-            }
-            else if (mode == 2)
-            {
+            case POWER_OFF:
+
+            break;
+            case POWER_ON:
+                break;
+            case HOMING:
+                break;
+            case READ_COLOR_TAG:
+                Color_sensor.readRaw(C, R, G, B);
+
+                break;
+            case INDICATE_COLOR_LED:
+                break;
+            case MOVE_TO_MEASURE_POS:
+                int32_t current_steps_up = Stepper_Up.getPosition();
+                float current_degrees_up = (current_steps_up * 360.0f) / (float)STEPPER_DEGREES_PER_STEP;
+                float error_up = ref - current_degrees_up;
+
+                if ((error_up > DEGREE_DEADBAND) || (error_up < -DEGREE_DEADBAND))
+                {
+                    float u = PID_STEPPER.computedU(error_up);
+                    Stepper_Up.moveDegrees(error_up, (uint32_t)u);
+                }
+                break;
+                break;
+            case LOWER_SPINDLE:
+                // Mode 2: Move Stepper_Up to ref degrees
+                int32_t current_steps_up = Stepper_Up.getPosition();
+                float current_degrees_up = (current_steps_up * 360.0f) / (float)STEPPER_DEGREES_PER_STEP;
+                float error_up = 0 - current_degrees_up;
+
+                if ((error_up > DEGREE_DEADBAND) || (error_up < -DEGREE_DEADBAND))
+                {
+                    float u = PID_STEPPER.computedU(error_up);
+                    Stepper_Up.moveDegrees(error_up, (uint32_t)u);
+                }
+                break;
+            case RAISE_SPINDLE:
                 // Mode 2: Move Stepper_Up to ref degrees
                 int32_t current_steps_up = Stepper_Up.getPosition();
                 float current_degrees_up = (current_steps_up * 360.0f) / (float)STEPPER_DEGREES_PER_STEP;
@@ -52,15 +76,39 @@ extern "C" void app_main()
                 {
                     float u = PID_STEPPER.computedU(error_up);
                     Stepper_Up.moveDegrees(error_up, (uint32_t)u);
-                    printf("Mode 2 - Stepper UP -> Set: %.2f°, Pos: %.2f°, Err: %.2f°, Freq: %.0f Hz\n",
-                           ref, current_degrees_up, error_up, u);
                 }
-                else
-                {
-                    static int print_counter_up = 0;
-                    if ((print_counter_up++ % 10) == 0)
-                        printf("Mode 2 - Stepper UP at target: %.2f° (setpoint %.2f°)\n", current_degrees_up, ref);
-                }
+                break;
+            case MEASURE_VISCOSITY:
+                ViscometerReading visc_read = visco1.measure();
+                break;
+            case EVALUATE_RESULT:
+                
+                break;
+            case DOSE_WATER:
+
+                break;
+            case STIR_HIGH_RPM:
+                visco1.setTargetSpeed(100.0f);
+
+                break;
+            case STIR_HOLD_DELAY:
+                break;
+            case RE_MEASURE:
+                break;
+            case ACCEPT_SAMPLE:
+                break;
+            case REJECT_SAMPLE:
+                break;
+            case MOVE_TO_CLEAN_POS:
+                break;
+            case CLEANING_RINSE:
+                break;
+            case EMERGENCY_STOP:
+
+                break;
+
+            default:
+                break;
             }
         }
     }
