@@ -133,7 +133,6 @@ extern "C" void app_main(void)
             // optional: parse commands: e.g., sscanf(Buffer, "%d,%f", &mode, &ref);
         }
 
-        // ---- declare per-tick elapsed trackers here (no initialization that crosses cases) ----
         uint64_t elapsed_visc_us = 0;
         uint64_t elapsed_pump_us = 0;
 
