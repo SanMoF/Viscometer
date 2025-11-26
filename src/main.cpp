@@ -9,22 +9,22 @@ static void IRAM_ATTR timerinterrupt(void *arg)
 }
 
 // ---------- Per-stepper fractional accumulators ----------
- float frac_acc_up  = 0.0f;
- float frac_acc_rot = 0.0f; // unused here but kept for symmetry
+float frac_acc_up = 0.0f;
+float frac_acc_rot = 0.0f; // unused here but kept for symmetry
 
 // ---------- Persistent timestamps (microseconds) ----------
- uint64_t visc_start_time = 0; // when viscometer measurement started
- uint64_t pump_start_time = 0; // when pump dosing started
+uint64_t visc_start_time = 0; // when viscometer measurement started
+uint64_t pump_start_time = 0; // when pump dosing started
 
 // ---------- Incremental Step_W_PID ----------
 // Issues integer steps-per-tick based on frequency from PID and preserves fractional remainder.
 // Returns true while still moving, false when target reached (deadband).
- bool Step_W_PID(
+bool Step_W_PID(
     Stepper &stp,
     PID_CAYETANO &pid,
     float setpoint_deg,
-    float &frac_acc,                // per-stepper fractional accumulator (must persist across ticks)
-    uint32_t steps_per_rev,         // steps per revolution (integer)
+    float &frac_acc,        // per-stepper fractional accumulator (must persist across ticks)
+    uint32_t steps_per_rev, // steps per revolution (integer)
     float deadband_deg = DEGREE_DEADBAND,
     float min_freq = MIN_FREQ,
     float max_freq = MAX_FREQ)
@@ -51,8 +51,10 @@ static void IRAM_ATTR timerinterrupt(void *arg)
 
     // magnitude of frequency and clamp
     float freq = fabsf(u);
-    if (freq < min_freq) freq = min_freq;
-    if (freq > max_freq) freq = max_freq;
+    if (freq < min_freq)
+        freq = min_freq;
+    if (freq > max_freq)
+        freq = max_freq;
 
     // dt is global (microseconds) from definitions.h — convert to seconds
     float dt_s = ((float)dt) / 1e6f;
@@ -73,7 +75,8 @@ static void IRAM_ATTR timerinterrupt(void *arg)
 
     // Convert steps to degrees for this tick, keep sign according to error
     float degrees_to_move = (float)steps_to_issue * deg_per_step;
-    if (error < 0.0f) degrees_to_move = -degrees_to_move;
+    if (error < 0.0f)
+        degrees_to_move = -degrees_to_move;
 
     // Command movement for this small chunk
     stp.moveDegrees(degrees_to_move, (uint32_t)freq);
@@ -101,6 +104,7 @@ extern "C" void app_main(void)
     // Stepper & pump setup
     Stepper_Up.setup(STEPPER_UP_PWM_PIN, STEPPER_UP_DIR_PIN, Stepper_UP_CH, &PWM_STEPPER_UP_TIMER, STEPS_PER_REV);
     Stepper_Rot.setup(STEPPER_ROT_PWM_PIN, STEPPER_ROT_DIR_PIN, Stepper_ROT_CH, &PWM_STEPPER_ROT_TIMER, STEPS_PER_REV);
+    Color_sensor.begin(I2C_NUM_0, 0x29);
 
     // If you have a Pump object declared in definitons.h:
     Pump.setup(Pump_PIns, pump_ch, &Motor_Timer);
@@ -110,9 +114,8 @@ extern "C" void app_main(void)
     // PID: sample time in milliseconds (dt in microseconds -> dt/1000)
     PID_STEPPER.setup(PID_GAINS, (int)(dt / 1000000));
 
-
     // start test: lower spindle first
-    Current_state = LOWER_SPINDLE;
+    Current_state = READ_COLOR_TAG;
     ref = 0.0f;
 
     while (1)
@@ -127,9 +130,11 @@ extern "C" void app_main(void)
         len = UART.available();
         if (len > 0)
         {
-            if (len > (int)sizeof(Buffer) - 1) len = sizeof(Buffer) - 1;
+            if (len > (int)sizeof(Buffer) - 1)
+                len = sizeof(Buffer) - 1;
             int r = UART.read(Buffer, len);
-            if (r > 0) Buffer[r] = '\0';
+            if (r > 0)
+                Buffer[r] = '\0';
             // optional: parse commands: e.g., sscanf(Buffer, "%d,%f", &mode, &ref);
         }
 
@@ -151,9 +156,69 @@ extern "C" void app_main(void)
             (void)0;
             break;
 
-        case READ_COLOR_TAG:
-            Color_sensor.readRaw(C, R, G, B);
-            break;
+       case READ_COLOR_TAG:
+{
+    // single-sample read (you can replace with averaging if you want)
+    Color_sensor.readRaw(C, R, G, B);
+
+    // --- calibration endpoints (replace these with your measured values) ---
+    const uint32_t C_black = 455U;
+    const uint16_t R_black = 284U;
+    const uint16_t G_black = 225U;
+    const uint16_t B_black = 158U;
+
+    const uint32_t C_white = 7086U;
+    const uint16_t R_white = 3231U;
+    const uint16_t G_white = 3097U;
+    const uint16_t B_white = 2297U;
+
+    // --- safe denominators (use int to avoid unsigned underflow) ---
+    int denomR = (int)R_white - (int)R_black;
+    int denomG = (int)G_white - (int)G_black;
+    int denomB = (int)B_white - (int)B_black;
+
+    // --- compute scaled values as ints (use float for ratio) ---
+    int r_temp = 0;
+    int g_temp = 0;
+    int b_temp = 0;
+
+    if (denomR > 0) {
+        float ratio = ((float)((int)R - (int)R_black)) / (float)denomR;
+        r_temp = (int)lroundf(ratio * 255.0f);
+    } else {
+        r_temp = 0;
+    }
+
+    if (denomG > 0) {
+        float ratio = ((float)((int)G - (int)G_black)) / (float)denomG;
+        g_temp = (int)lroundf(ratio * 255.0f);
+    } else {
+        g_temp = 0;
+    }
+
+    if (denomB > 0) {
+        float ratio = ((float)((int)B - (int)B_black)) / (float)denomB;
+        b_temp = (int)lroundf(ratio * 255.0f);
+    } else {
+        b_temp = 0;
+    }
+
+    // clamp to 0..255
+    if (r_temp < 0) r_temp = 0; else if (r_temp > 255) r_temp = 255;
+    if (g_temp < 0) g_temp = 0; else if (g_temp > 255) g_temp = 255;
+    if (b_temp < 0) b_temp = 0; else if (b_temp > 255) b_temp = 255;
+
+    uint8_t Rcal = (uint8_t)r_temp;
+    uint8_t Gcal = (uint8_t)g_temp;
+    uint8_t Bcal = (uint8_t)b_temp;
+
+    // print calibrated and raw values (use PRIu macros for fixed-width types)
+    printf("Calibrated ------ R:%u G:%u B:%u\n", Rcal, Gcal, Bcal);
+    printf("RAW  ------ C:%u R:%u G:%u B:%u\n",
+           C, R, G, B);
+
+    break;
+}
 
         case INDICATE_COLOR_LED:
             (void)0;
@@ -189,9 +254,9 @@ extern "C" void app_main(void)
             elapsed_visc_us = esp_timer_get_time() - visc_start_time;
             if (elapsed_visc_us >= 5ULL * 1000 * 1000) // 5 seconds
             {
-                visco1.setTargetSpeed(0.0f);        // stop viscometer
+                visco1.setTargetSpeed(0.0f);            // stop viscometer
                 pump_start_time = esp_timer_get_time(); // start pump timer
-                Pump.setSpeed(60.0f);               // start pump
+                Pump.setSpeed(60.0f);                   // start pump
                 Current_state = DOSE_WATER;
             }
             break;
