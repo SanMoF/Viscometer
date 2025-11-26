@@ -108,7 +108,7 @@ extern "C" void app_main(void)
     timer.startPeriodic(dt);
 
     // PID: sample time in milliseconds (dt in microseconds -> dt/1000)
-    PID_STEPPER.setup(PID_GAINS, (int)(dt / 1000));
+    PID_STEPPER.setup(PID_GAINS, (int)(dt / 1000000));
 
 
     // start test: lower spindle first
@@ -192,7 +192,7 @@ extern "C" void app_main(void)
             {
                 visco1.setTargetSpeed(0.0f);        // stop viscometer
                 pump_start_time = esp_timer_get_time(); // start pump timer
-                Pump.setSpeed(40.0f);               // start pump
+                Pump.setSpeed(60.0f);               // start pump
                 Current_state = DOSE_WATER;
             }
             break;
@@ -202,7 +202,7 @@ extern "C" void app_main(void)
         {
             // check pump elapsed time
             elapsed_pump_us = esp_timer_get_time() - pump_start_time;
-            if (elapsed_pump_us >= 5ULL * 1000 * 1000) // 5 seconds
+            if (elapsed_pump_us >= 2300000) // 5 seconds
             {
                 Pump.setSpeed(0.0f);
                 Current_state = RAISE_SPINDLE;
