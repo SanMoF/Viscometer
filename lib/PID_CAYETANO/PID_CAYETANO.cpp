@@ -20,7 +20,6 @@ float PID_CAYETANO::computedU(float error)
 {
     // safety dt
     if (_dt <= 0.0f) {
-        printf("PID ERROR: _dt <= 0 (%.9f)\n", _dt);
         return 0.0f;
     }
 
