@@ -155,36 +155,42 @@ extern "C" void app_main(void)
 
         case LOWER_SPINDLE:
         {
-            // fixed setpoint for lower spindle
-            float target = 2 * 360 / 0.8; // same as before
+            float target = -2 * 360 / 0.8; // same as before
             bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, target, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
 
             if (!moving)
             {
                 printf("LOWER_SPINDLE reached target\n");
-                Current_state = RAISE_SPINDLE; // move to next state only when target reached
-            }
-            break;
-        }
-
-        case RAISE_SPINDLE:
-        {
-            float target = 0; // back to home
-            bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, target, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
-
-            if (!moving)
-            {
-                printf("RAISE_SPINDLE reached home\n");
-                // you can move to the next state or loop back
-                Current_state = POWER_ON; // or whichever state comes next
+                visc_start_time = esp_timer_get_time(); // start timer for viscometer wait
+                Current_state = MEASURE_VISCOSITY;
             }
             break;
         }
 
         case MEASURE_VISCOSITY:
         {
-            (void)0;
             ViscometerReading visc_read = visco1.measure();
+            printf("RPMS: %f, Visc: %f\n", visc_read.rpm, visc_read.viscosity);
+
+            uint64_t elapsed_us = esp_timer_get_time() - visc_start_time;
+            if (elapsed_us >= 5000000)
+            {
+                visco1.setTargetSpeed(0);
+                Current_state = RAISE_SPINDLE;
+            }
+            break;
+        }
+
+        case RAISE_SPINDLE:
+        {
+            float target = 0;
+            bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, target, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
+
+            if (!moving)
+            {
+                printf("RAISE_SPINDLE reached home\n");
+                Current_state = POWER_ON;
+            }
             break;
         }
 

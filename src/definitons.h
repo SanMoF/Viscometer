@@ -187,6 +187,8 @@ TCS34725 Color_sensor;
 float PID_GAINS[3] = {3.0f, 0.0f, 0.0f};
 uint16_t R, G, B, C;
 uint32_t STEPS_PER_REV = 400;
+uint64_t visc_start_time = 0;
+
 
 // Useful variables
 // per-stepper fractional accumulators (one per stepper you use)
