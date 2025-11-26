@@ -12,6 +12,7 @@
 #include "esp_task_wdt.h"
 
 #include "SimpleTimer.h"
+#include "cmath"
 #include "SimpleGPIO.h"
 #include "SimplePWM.h"
 #include "SimpleUART.h"
@@ -28,7 +29,7 @@
 // ============================================================================
 // TIMING CONFIGURATION
 // ============================================================================
-uint64_t dt = 20000;
+uint64_t dt = 10000;
 
 // State machine
 enum Main_l
@@ -199,7 +200,7 @@ char Buffer[64] = {0}; // ensure this exists (or use the one in your header)
 const float DEGREE_DEADBAND = 1.0f;
 const float MIN_FREQ = 100.0f;
 const float MAX_FREQ = 2000.0f;
-ViscometerState Current_state = POWER_OFF;
+ViscometerState Current_state = LOWER_SPINDLE;
 // ============================================================================
 // PIN DEFINITIONS
 // ============================================================================
@@ -247,6 +248,5 @@ static TimerConfig Motor_Timer{
     .mode = LEDC_LOW_SPEED_MODE};
 
 static const float STEPPER_DEGREES_PER_STEP = 1.8f;
-char Buffer[32];
 
 #endif // __DEFINITIONS_H__
