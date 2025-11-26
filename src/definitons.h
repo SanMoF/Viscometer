@@ -31,12 +31,6 @@
 // ============================================================================
 uint64_t dt = 10000;
 
-// State machine
-enum Main_l
-{
-    MANUAL = 0,
-    AUTO = 1
-};
 enum ViscometerState
 {
 
@@ -190,9 +184,11 @@ PID_CAYETANO PID_STEPPER;
 TCS34725 Color_sensor;
 
 // Consts or variable definitions
-float PID_GAINS[3] = {0.1f, 1.0f, 0.0f};
+float PID_GAINS[3] = {2.0f, 0.5f, 0.0f};
 uint16_t R, G, B, C;
 // Useful variables
+// per-stepper fractional accumulators (one per stepper you use)
+
 int len = 0;
 int mode = 0;
 float ref = 0.0f;      // incoming reference (mode-dependent)

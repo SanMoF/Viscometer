@@ -1,196 +1,263 @@
+// main.cpp - state machine test with incremental Step_W_PID
 #include "definitons.h"
+#include <math.h>
+#include <inttypes.h>
 
 static void IRAM_ATTR timerinterrupt(void *arg)
 {
     timer.setInterrupt();
 }
 
-// incremental Step_W_PID — uses dt (global) as timer period (microseconds)
-static void Step_W_PID(
+// ---------- Per-stepper fractional accumulators ----------
+float frac_acc_up = 0.0f;
+float frac_acc_rot = 0.0f; // unused here but provided for symmetry
+
+// ---------- Incremental Step_W_PID ----------
+// Issues integer steps-per-tick based on frequency from PID and preserves fractional remainder.
+// Returns true while still moving, false when target reached (deadband).
+static bool Step_W_PID(
     Stepper &stp,
     PID_CAYETANO &pid,
     float setpoint_deg,
-    uint32_t steps_per_rev,
-    float deadband_deg = 1.0f,
-    float min_freq = 200.0f,
-    float max_freq = 2000.0f)
+    float &frac_acc,        // per-stepper fractional accumulator (must persist across ticks)
+    uint32_t steps_per_rev, // steps per revolution (integer)
+    float deadband_deg = DEGREE_DEADBAND,
+    float min_freq = MIN_FREQ,
+    float max_freq = MAX_FREQ)
 {
-    // degrees per step for this stepper
+    // degrees per step
     const float deg_per_step = 360.0f / (float)steps_per_rev;
 
-    // read current position and error
+    // read current position (steps) and convert to degrees
     int32_t pos_steps = stp.getPosition();
     float pos_deg = (pos_steps * 360.0f) / (float)steps_per_rev;
+
+    // error in degrees
     float error = setpoint_deg - pos_deg;
 
-    // deadband -> hard stop + reset accumulator + reset PID integral
+    // If within deadband -> hard stop and clear accumulator
     if (fabsf(error) <= deadband_deg)
     {
         stp.forceStop();
-        // reset accumulator for this function instance
-        // We keep a static accumulator for a single stepper usage in tests.
-        static float frac_acc = 0.0f;
         frac_acc = 0.0f;
-        // If your PID has reset method, call it here (preferred)
-        // pid.resetIntegral(); // uncomment if available
-        return;
+        // If PID offers an integral reset, call it here to avoid windup:
+        // pid.resetIntegral();
+        return false; // at target (not moving)
     }
 
-    // PID output => desired frequency (Hz)
+    // PID output interpreted as desired frequency (Hz)
     float u = pid.computedU(error);
 
-    // safe guard frequency magnitude
+    // magnitude of frequency and clamp
     float freq = fabsf(u);
-    if (freq < min_freq) freq = min_freq;
-    if (freq > max_freq) freq = max_freq;
+    if (freq < min_freq)
+        freq = min_freq;
+    if (freq > max_freq)
+        freq = max_freq;
 
-    // convert dt (global) microseconds -> seconds
-    float dt_s = ((float)dt) / 1e6f; // dt is defined in definitions.h
+    // Convert global dt to seconds. dt is defined in definitions.h (you used microseconds before)
+    // If your dt is microseconds (as in earlier code), convert accordingly:
+    float dt_s = ((float)dt) / 1e6f;
 
-    // steps to issue this tick (float)
+    // Floating number of steps that should be produced this tick
     float steps_float = freq * dt_s;
 
-    // static fractional accumulator (single accumulator for test stepper)
-    static float fractional_steps_acc = 0.0f;
-    fractional_steps_acc += steps_float;
+    // Accumulate fractional steps
+    frac_acc += steps_float;
 
-    // integer steps to issue now
-    int32_t steps_to_issue = (int32_t)floorf(fractional_steps_acc);
+    // Issue only integer full steps this tick
+    int32_t steps_to_issue = (int32_t)floorf(frac_acc);
     if (steps_to_issue <= 0)
     {
-        // no full steps this tick; nothing to command yet
-        return;
+        // Nothing to do this tick, still moving
+        return true;
     }
 
-    // build degrees to move this tick (preserve sign from error)
+    // Convert steps to degrees for this tick, keep sign according to error
     float degrees_to_move = (float)steps_to_issue * deg_per_step;
-    if (error < 0.0f) degrees_to_move = -degrees_to_move;
+    if (error < 0.0f)
+        degrees_to_move = -degrees_to_move;
 
-    // command the incremental movement at the desired frequency
+    // Command movement for this small chunk
     stp.moveDegrees(degrees_to_move, (uint32_t)freq);
 
-    // subtract the integer steps we just issued
-    fractional_steps_acc -= (float)steps_to_issue;
+    // Subtract issued integer steps from accumulator
+    frac_acc -= (float)steps_to_issue;
+
+    return true; // still moving
 }
 
-extern "C" void app_main()
+// ============================================================================
+// app_main
+// ============================================================================
+extern "C" void app_main(void)
 {
     esp_task_wdt_deinit();
-    timer.setup(timerinterrupt, "MainTimer");
 
+    // compute steps-per-revolution from STEPPER_DEGREES_PER_STEP (1.8 deg/step -> 200 steps/rev)
+     uint32_t STEPS_PER_REV = 400;
+
+    // set up timer and peripherals
+    timer.setup(timerinterrupt, "MainTimer");
     visco1.setup(Motor_Pins, motor_ch, Encoder_PINs, &Motor_Timer, dt, ADC_PIN);
-    Stepper_Up.setup(STEPPER_UP_PWM_PIN, STEPPER_UP_DIR_PIN, Stepper_UP_CH, &PWM_STEPPER_UP_TIMER, STEPPER_DEGREES_PER_STEP);
-    Stepper_Rot.setup(STEPPER_ROT_PWM_PIN, STEPPER_ROT_DIR_PIN, Stepper_ROT_CH, &PWM_STEPPER_ROT_TIMER, STEPPER_DEGREES_PER_STEP);
+
+    // Stepper setup: pass steps-per-rev (integer)
+    Stepper_Up.setup(STEPPER_UP_PWM_PIN, STEPPER_UP_DIR_PIN, Stepper_UP_CH, &PWM_STEPPER_UP_TIMER, STEPS_PER_REV);
+    Stepper_Rot.setup(STEPPER_ROT_PWM_PIN, STEPPER_ROT_DIR_PIN, Stepper_ROT_CH, &PWM_STEPPER_ROT_TIMER, STEPS_PER_REV);
 
     timer.startPeriodic(dt);
 
+    // Ensure PID for stepper is set up (use globals from definitions.h)
+    PID_STEPPER.setup(PID_GAINS, (int)(dt / 1000)); // PID.setup expects sample time in ms; convert if dt in us
+
+    // For testing: Current_state already set to LOWER_SPINDLE (per definitions.h)
+    // We will use ref as the fixed setpoint degrees for the LOWER_SPINDLE test.
+    ref = 0.0f;
+
     while (1)
     {
-        if (timer.interruptAvailable())
+        if (!timer.interruptAvailable())
         {
-            len = UART.available();
-            if (len)
-            {
-                UART.read(Buffer, len);
-            }
-
-            switch (Current_state)
-            {
-            case POWER_OFF:
-                (void)0;
-                break;
-
-            case POWER_ON:
-                (void)0;
-                break;
-
-            case HOMING:
-                (void)0;
-                break;
-
-            case READ_COLOR_TAG:
-                Color_sensor.readRaw(C, R, G, B);
-                break;
-
-            case INDICATE_COLOR_LED:
-                (void)0;
-                break;
-
-            case MOVE_TO_MEASURE_POS:
-                (void)0;
-                break;
-
-            case LOWER_SPINDLE:
-                Step_W_PID(Stepper_Up, PID_STEPPER, 500, 400);
-                break;
-
-            case RAISE_SPINDLE:
-                Step_W_PID(Stepper_Up, PID_STEPPER, 0, 400);
-                break;
-
-            case MEASURE_VISCOSITY:
-                (void)0;
-                {
-                    ViscometerReading visc_read = visco1.measure();
-                }
-                break;
-
-            case EVALUATE_RESULT:
-                (void)0;
-                break;
-
-            case DOSE_WATER:
-                (void)0;
-                break;
-
-            case STIR_HIGH_RPM:
-                visco1.setTargetSpeed(100.0f);
-                break;
-
-            case STIR_HOLD_DELAY:
-                (void)0;
-                break;
-
-            case RE_MEASURE:
-                (void)0;
-                break;
-
-            case ACCEPT_SAMPLE:
-                (void)0;
-                break;
-
-            case REJECT_SAMPLE:
-                (void)0;
-                break;
-
-            case MOVE_TO_CLEAN_POS:
-                (void)0;
-                break;
-
-            case CLEANING_RINSE:
-                (void)0;
-                break;
-
-            case EMERGENCY_STOP:
-                (void)0;
-                break;
-
-            case CHECK_ADJUSTMENT_LOOP:
-                (void)0;
-                break;
-
-            case MAINTENANCE_MODE:
-                (void)0;
-                break;
-
-            case CALIBRATE_SENSORS:
-                (void)0;
-                break;
-
-            default:
-                (void)0;
-                break;
-            }
+            // nothing to do until next tick
+            vTaskDelay(pdMS_TO_TICKS(1));
+            continue;
         }
-    }
-}
+
+        // Safe UART read (non-blocking)
+        len = UART.available();
+        if (len > 0)
+        {
+            if (len > (int)sizeof(Buffer) - 1)
+                len = sizeof(Buffer) - 1;
+            int r = UART.read(Buffer, len);
+            if (r > 0)
+                Buffer[r] = '\0';
+            // optional: parse commands to change Current_state or ref
+            // e.g., sscanf(Buffer, "%d,%f", &mode, &ref);
+        }
+
+        // Example: emergency stop check (you can wire this to a safety input if desired)
+        // if (estop_gpio.get() == 1) { Stepper_Up.forceStop(); Stepper_Rot.forceStop(); Current_state = EMERGENCY_STOP; }
+
+        // State machine
+        switch (Current_state)
+        {
+        case POWER_OFF:
+            (void)0;
+            break;
+
+        case POWER_ON:
+            (void)0;
+            break;
+
+        case HOMING:
+            (void)0;
+            break;
+
+        case READ_COLOR_TAG:
+            Color_sensor.readRaw(C, R, G, B);
+            break;
+
+        case INDICATE_COLOR_LED:
+            (void)0;
+            break;
+
+        case MOVE_TO_MEASURE_POS:
+            (void)0;
+            break;
+
+        case LOWER_SPINDLE:
+        {
+            // fixed setpoint for test: move down 500 degrees from zero (absolute)
+            
+
+            bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, 4*360/.8, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
+
+            if (!moving)
+            {
+                // reached target — optional: advance state or indicate success
+                printf("LOWER_SPINDLE reached: %.2f deg\n", ref);
+                // Example: stay in this state or move to next:
+                // Current_state = RAISE_SPINDLE;
+                
+            }
+            break;
+        }
+
+        case RAISE_SPINDLE:
+        {
+            ref = 0.0f;
+            bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, ref, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
+            if (!moving)
+            {
+                printf("RAISE_SPINDLE reached: %.2f deg\n", ref);
+                // Current_state = NEXT_STATE;
+            }
+            break;
+        }
+
+        case MEASURE_VISCOSITY:
+        {
+            (void)0;
+            ViscometerReading visc_read = visco1.measure();
+            break;
+        }
+
+        case EVALUATE_RESULT:
+            (void)0;
+            break;
+
+        case DOSE_WATER:
+            (void)0;
+            break;
+
+        case STIR_HIGH_RPM:
+            visco1.setTargetSpeed(100.0f);
+            break;
+
+        case STIR_HOLD_DELAY:
+            (void)0;
+            break;
+
+        case RE_MEASURE:
+            (void)0;
+            break;
+
+        case ACCEPT_SAMPLE:
+            (void)0;
+            break;
+
+        case REJECT_SAMPLE:
+            (void)0;
+            break;
+
+        case MOVE_TO_CLEAN_POS:
+            (void)0;
+            break;
+
+        case CLEANING_RINSE:
+            (void)0;
+            break;
+
+        case EMERGENCY_STOP:
+            (void)0;
+            break;
+
+        case CHECK_ADJUSTMENT_LOOP:
+            (void)0;
+            break;
+
+        case MAINTENANCE_MODE:
+            (void)0;
+            break;
+
+        case CALIBRATE_SENSORS:
+            (void)0;
+            break;
+
+        default:
+            (void)0;
+            break;
+        } // end switch
+    } // end while
+} // end app_main
