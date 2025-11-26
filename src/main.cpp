@@ -95,8 +95,6 @@ extern "C" void app_main(void)
     esp_task_wdt_deinit();
 
     // compute steps-per-revolution from STEPPER_DEGREES_PER_STEP (1.8 deg/step -> 200 steps/rev)
-     uint32_t STEPS_PER_REV = 400;
-
     // set up timer and peripherals
     timer.setup(timerinterrupt, "MainTimer");
     visco1.setup(Motor_Pins, motor_ch, Encoder_PINs, &Motor_Timer, dt, ADC_PIN);
@@ -108,11 +106,9 @@ extern "C" void app_main(void)
     timer.startPeriodic(dt);
 
     // Ensure PID for stepper is set up (use globals from definitions.h)
-    PID_STEPPER.setup(PID_GAINS, (int)(dt / 1000)); // PID.setup expects sample time in ms; convert if dt in us
+    PID_STEPPER.setup(PID_GAINS, (int)(dt / 1000000)); // PID.setup expects sample time in ms; convert if dt in us
 
-    // For testing: Current_state already set to LOWER_SPINDLE (per definitions.h)
-    // We will use ref as the fixed setpoint degrees for the LOWER_SPINDLE test.
-    ref = 0.0f;
+    
 
     while (1)
     {
@@ -127,13 +123,7 @@ extern "C" void app_main(void)
         len = UART.available();
         if (len > 0)
         {
-            if (len > (int)sizeof(Buffer) - 1)
-                len = sizeof(Buffer) - 1;
-            int r = UART.read(Buffer, len);
-            if (r > 0)
-                Buffer[r] = '\0';
-            // optional: parse commands to change Current_state or ref
-            // e.g., sscanf(Buffer, "%d,%f", &mode, &ref);
+            
         }
 
         // Example: emergency stop check (you can wire this to a safety input if desired)
@@ -169,30 +159,15 @@ extern "C" void app_main(void)
         case LOWER_SPINDLE:
         {
             // fixed setpoint for test: move down 500 degrees from zero (absolute)
-            
 
-            bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, 4*360/.8, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
-
-            if (!moving)
-            {
-                // reached target — optional: advance state or indicate success
-                printf("LOWER_SPINDLE reached: %.2f deg\n", ref);
-                // Example: stay in this state or move to next:
-                // Current_state = RAISE_SPINDLE;
-                
-            }
+            bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, 4 * 360 / .8, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
             break;
         }
 
         case RAISE_SPINDLE:
         {
             ref = 0.0f;
-            bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, ref, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
-            if (!moving)
-            {
-                printf("RAISE_SPINDLE reached: %.2f deg\n", ref);
-                // Current_state = NEXT_STATE;
-            }
+            bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, 0, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
             break;
         }
 
