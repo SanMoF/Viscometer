@@ -9,23 +9,26 @@ static void IRAM_ATTR timerinterrupt(void *arg)
 }
 
 // ---------- Per-stepper fractional accumulators ----------
-float frac_acc_up = 0.0f;
-float frac_acc_rot = 0.0f; // unused here but provided for symmetry
+ float frac_acc_up  = 0.0f;
+ float frac_acc_rot = 0.0f; // unused here but kept for symmetry
+
+// ---------- Persistent timestamps (microseconds) ----------
+ uint64_t visc_start_time = 0; // when viscometer measurement started
+ uint64_t pump_start_time = 0; // when pump dosing started
 
 // ---------- Incremental Step_W_PID ----------
 // Issues integer steps-per-tick based on frequency from PID and preserves fractional remainder.
 // Returns true while still moving, false when target reached (deadband).
-static bool Step_W_PID(
+ bool Step_W_PID(
     Stepper &stp,
     PID_CAYETANO &pid,
     float setpoint_deg,
-    float &frac_acc,        // per-stepper fractional accumulator (must persist across ticks)
-    uint32_t steps_per_rev, // steps per revolution (integer)
+    float &frac_acc,                // per-stepper fractional accumulator (must persist across ticks)
+    uint32_t steps_per_rev,         // steps per revolution (integer)
     float deadband_deg = DEGREE_DEADBAND,
     float min_freq = MIN_FREQ,
     float max_freq = MAX_FREQ)
 {
-    // degrees per step
     const float deg_per_step = 360.0f / (float)steps_per_rev;
 
     // read current position (steps) and convert to degrees
@@ -40,8 +43,6 @@ static bool Step_W_PID(
     {
         stp.forceStop();
         frac_acc = 0.0f;
-        // If PID offers an integral reset, call it here to avoid windup:
-        // pid.resetIntegral();
         return false; // at target (not moving)
     }
 
@@ -50,13 +51,10 @@ static bool Step_W_PID(
 
     // magnitude of frequency and clamp
     float freq = fabsf(u);
-    if (freq < min_freq)
-        freq = min_freq;
-    if (freq > max_freq)
-        freq = max_freq;
+    if (freq < min_freq) freq = min_freq;
+    if (freq > max_freq) freq = max_freq;
 
-    // Convert global dt to seconds. dt is defined in definitions.h (you used microseconds before)
-    // If your dt is microseconds (as in earlier code), convert accordingly:
+    // dt is global (microseconds) from definitions.h — convert to seconds
     float dt_s = ((float)dt) / 1e6f;
 
     // Floating number of steps that should be produced this tick
@@ -75,8 +73,7 @@ static bool Step_W_PID(
 
     // Convert steps to degrees for this tick, keep sign according to error
     float degrees_to_move = (float)steps_to_issue * deg_per_step;
-    if (error < 0.0f)
-        degrees_to_move = -degrees_to_move;
+    if (error < 0.0f) degrees_to_move = -degrees_to_move;
 
     // Command movement for this small chunk
     stp.moveDegrees(degrees_to_move, (uint32_t)freq);
@@ -94,37 +91,51 @@ extern "C" void app_main(void)
 {
     esp_task_wdt_deinit();
 
-    // compute steps-per-revolution from STEPPER_DEGREES_PER_STEP (1.8 deg/step -> 200 steps/rev)
-    // set up timer and peripherals
+    // compute integer steps-per-rev from STEPPER_DEGREES_PER_STEP
+    const uint32_t STEPS_PER_REV = (uint32_t)lroundf(360.0f / STEPPER_DEGREES_PER_STEP);
+
+    // setup timer and peripherals
     timer.setup(timerinterrupt, "MainTimer");
     visco1.setup(Motor_Pins, motor_ch, Encoder_PINs, &Motor_Timer, dt, ADC_PIN);
 
-    // Stepper setup: pass steps-per-rev (integer)
+    // Stepper & pump setup
     Stepper_Up.setup(STEPPER_UP_PWM_PIN, STEPPER_UP_DIR_PIN, Stepper_UP_CH, &PWM_STEPPER_UP_TIMER, STEPS_PER_REV);
     Stepper_Rot.setup(STEPPER_ROT_PWM_PIN, STEPPER_ROT_DIR_PIN, Stepper_ROT_CH, &PWM_STEPPER_ROT_TIMER, STEPS_PER_REV);
 
+    // If you have a Pump object declared in definitons.h:
+    Pump.setup(Pump_PIns, pump_ch, &Motor_Timer);
+
     timer.startPeriodic(dt);
 
-    // Ensure PID for stepper is set up (use globals from definitions.h)
-    PID_STEPPER.setup(PID_GAINS, (int)(dt / 1000000)); // PID.setup expects sample time in ms; convert if dt in us
+    // PID: sample time in milliseconds (dt in microseconds -> dt/1000)
+    PID_STEPPER.setup(PID_GAINS, (int)(dt / 1000));
+
+
+    // start test: lower spindle first
+    Current_state = LOWER_SPINDLE;
+    ref = 0.0f;
 
     while (1)
     {
         if (!timer.interruptAvailable())
         {
-            // nothing to do until next tick
             vTaskDelay(pdMS_TO_TICKS(1));
             continue;
         }
 
-        // Safe UART read (non-blocking)
+        // Non-blocking UART read
         len = UART.available();
         if (len > 0)
         {
+            if (len > (int)sizeof(Buffer) - 1) len = sizeof(Buffer) - 1;
+            int r = UART.read(Buffer, len);
+            if (r > 0) Buffer[r] = '\0';
+            // optional: parse commands: e.g., sscanf(Buffer, "%d,%f", &mode, &ref);
         }
 
-        // Example: emergency stop check (you can wire this to a safety input if desired)
-        // if (estop_gpio.get() == 1) { Stepper_Up.forceStop(); Stepper_Rot.forceStop(); Current_state = EMERGENCY_STOP; }
+        // ---- declare per-tick elapsed trackers here (no initialization that crosses cases) ----
+        uint64_t elapsed_visc_us = 0;
+        uint64_t elapsed_pump_us = 0;
 
         // State machine
         switch (Current_state)
@@ -155,13 +166,15 @@ extern "C" void app_main(void)
 
         case LOWER_SPINDLE:
         {
-            float target = -2 * 360 / 0.8; // same as before
+            // example target (keep same conversion you used earlier)
+            float target = -2.0f * 360.0f / 0.8f;
             bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, target, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
 
             if (!moving)
             {
-                printf("LOWER_SPINDLE reached target\n");
-                visc_start_time = esp_timer_get_time(); // start timer for viscometer wait
+                // reached lower position -> start viscometer measurement
+                visc_start_time = esp_timer_get_time();
+                visco1.setTargetSpeed(100.0f); // spin viscometer
                 Current_state = MEASURE_VISCOSITY;
             }
             break;
@@ -169,13 +182,29 @@ extern "C" void app_main(void)
 
         case MEASURE_VISCOSITY:
         {
+            // measure periodically
             ViscometerReading visc_read = visco1.measure();
-            printf("RPMS: %f, Visc: %f\n", visc_read.rpm, visc_read.viscosity);
+            printf("MEASURE_VISCOSITY: rpm=%.1f visc=%.3f\n", visc_read.rpm, visc_read.viscosity);
 
-            uint64_t elapsed_us = esp_timer_get_time() - visc_start_time;
-            if (elapsed_us >= 5000000)
+            // compute elapsed time (use previously declared variable)
+            elapsed_visc_us = esp_timer_get_time() - visc_start_time;
+            if (elapsed_visc_us >= 5ULL * 1000 * 1000) // 5 seconds
             {
-                visco1.setTargetSpeed(0);
+                visco1.setTargetSpeed(0.0f);        // stop viscometer
+                pump_start_time = esp_timer_get_time(); // start pump timer
+                Pump.setSpeed(40.0f);               // start pump
+                Current_state = DOSE_WATER;
+            }
+            break;
+        }
+
+        case DOSE_WATER:
+        {
+            // check pump elapsed time
+            elapsed_pump_us = esp_timer_get_time() - pump_start_time;
+            if (elapsed_pump_us >= 5ULL * 1000 * 1000) // 5 seconds
+            {
+                Pump.setSpeed(0.0f);
                 Current_state = RAISE_SPINDLE;
             }
             break;
@@ -183,24 +212,16 @@ extern "C" void app_main(void)
 
         case RAISE_SPINDLE:
         {
-            float target = 0;
+            float target = 0.0f; // back home
             bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, target, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
 
             if (!moving)
             {
                 printf("RAISE_SPINDLE reached home\n");
-                Current_state = POWER_ON;
+                Current_state = POWER_ON; // next state
             }
             break;
         }
-
-        case EVALUATE_RESULT:
-            (void)0;
-            break;
-
-        case DOSE_WATER:
-            (void)0;
-            break;
 
         case STIR_HIGH_RPM:
             visco1.setTargetSpeed(100.0f);
@@ -231,6 +252,11 @@ extern "C" void app_main(void)
             break;
 
         case EMERGENCY_STOP:
+            // hard stop all actuators
+            Stepper_Up.forceStop();
+            Stepper_Rot.forceStop();
+            Pump.setSpeed(0.0f);
+            visco1.setTargetSpeed(0.0f);
             (void)0;
             break;
 

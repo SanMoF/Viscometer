@@ -179,15 +179,15 @@ SimpleTimer timer;
 Stepper Stepper_Up;
 Stepper Stepper_Rot;
 Viscometer visco1;
+HBridge Pump;
 SimpleUART UART(115200);
 PID_CAYETANO PID_STEPPER;
 TCS34725 Color_sensor;
 
 // Consts or variable definitions
-float PID_GAINS[3] = {3.0f, 0.0f, 0.0f};
+float PID_GAINS[3] = {180.0f, 0.0f, 0.0f};
 uint16_t R, G, B, C;
 uint32_t STEPS_PER_REV = 400;
-uint64_t visc_start_time = 0;
 
 
 // Useful variables
@@ -199,7 +199,7 @@ float ref = 0.0f;      // incoming reference (mode-dependent)
 char Buffer[64] = {0}; // ensure this exists (or use the one in your header)
 const float DEGREE_DEADBAND = 1.0f;
 const float MIN_FREQ = 100.0f;
-const float MAX_FREQ = 2000.0f;
+const float MAX_FREQ = 3000.0f;
 ViscometerState Current_state = LOWER_SPINDLE;
 // ============================================================================
 // PIN DEFINITIONS
@@ -224,6 +224,7 @@ uint8_t ADC_PIN = 34;
 uint8_t motor_ch[2] = {0, 1};
 uint8_t Stepper_UP_CH = 2;
 uint8_t Stepper_ROT_CH = 3;
+uint8_t pump_ch[2] = {4, 5};
 
 // ============================================================================
 // PWM TIMER CONFIGURATIONS
