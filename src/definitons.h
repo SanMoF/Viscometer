@@ -185,7 +185,7 @@ PID_CAYETANO PID_STEPPER;
 TCS34725 Color_sensor;
 
 // Consts or variable definitions
-float PID_GAINS[3] = {180.0f, 0.0f, 0.0f};
+float PID_GAINS[3] = {20.0f, 0.0f, 0.0f};
 uint16_t R, G, B, C;
 uint32_t STEPS_PER_REV = 400;
 
@@ -199,7 +199,7 @@ float ref = 0.0f;      // incoming reference (mode-dependent)
 char Buffer[64] = {0}; // ensure this exists (or use the one in your header)
 const float DEGREE_DEADBAND = 1.0f;
 const float MIN_FREQ = 100.0f;
-const float MAX_FREQ = 1000.0f;
+const float MAX_FREQ = 2000.0f;
 ViscometerState Current_state = LOWER_SPINDLE;
 // ============================================================================
 // PIN DEFINITIONS
