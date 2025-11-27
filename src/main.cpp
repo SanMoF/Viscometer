@@ -96,7 +96,7 @@ extern "C" void app_main(void)
     esp_task_wdt_deinit();
 
     // compute integer steps-per-rev from STEPPER_DEGREES_PER_STEP
-    const uint32_t STEPS_PER_REV = (uint32_t)lroundf(360.0f / STEPPER_DEGREES_PER_STEP);
+    const uint32_t STEPS_PER_REV = (uint32_t)lroundf(360.0f / 0.225);
 
     // setup timer and peripherals
     timer.setup(timerinterrupt, "MainTimer");
@@ -173,7 +173,7 @@ extern "C" void app_main(void)
         case LOWER_SPINDLE:
         {
             // example target (keep same conversion you used earlier)
-            float target = -3*20000/2.6;
+            float target = -4*1500/3.3;//-3*20000/2.6;
             bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, target, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
 
             if (!moving)
@@ -194,7 +194,7 @@ extern "C" void app_main(void)
 
             // compute elapsed time (use previously declared variable)
             elapsed_visc_us = esp_timer_get_time() - visc_start_time;
-            if (elapsed_visc_us >= 5ULL * 1000 * 1000) // 5 seconds
+            if (elapsed_visc_us >= 5000000) // 5 seconds
             {
                 visco1.setTargetSpeed(0.0f);            // stop viscometer
                 pump_start_time = esp_timer_get_time(); // start pump timer
