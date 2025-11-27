@@ -199,7 +199,7 @@ float ref = 0.0f;      // incoming reference (mode-dependent)
 char Buffer[64] = {0}; // ensure this exists (or use the one in your header)
 const float DEGREE_DEADBAND = 1.0f;
 const float MIN_FREQ = 100.0f;
-const float MAX_FREQ = 3000.0f;
+const float MAX_FREQ = 1000.0f;
 ViscometerState Current_state = LOWER_SPINDLE;
 // ============================================================================
 // PIN DEFINITIONS

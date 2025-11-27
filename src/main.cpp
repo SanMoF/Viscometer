@@ -9,22 +9,22 @@ static void IRAM_ATTR timerinterrupt(void *arg)
 }
 
 // ---------- Per-stepper fractional accumulators ----------
- float frac_acc_up  = 0.0f;
- float frac_acc_rot = 0.0f; // unused here but kept for symmetry
+float frac_acc_up = 0.0f;
+float frac_acc_rot = 0.0f; // unused here but kept for symmetry
 
 // ---------- Persistent timestamps (microseconds) ----------
- uint64_t visc_start_time = 0; // when viscometer measurement started
- uint64_t pump_start_time = 0; // when pump dosing started
+uint64_t visc_start_time = 0; // when viscometer measurement started
+uint64_t pump_start_time = 0; // when pump dosing started
 
 // ---------- Incremental Step_W_PID ----------
 // Issues integer steps-per-tick based on frequency from PID and preserves fractional remainder.
 // Returns true while still moving, false when target reached (deadband).
- bool Step_W_PID(
+bool Step_W_PID(
     Stepper &stp,
     PID_CAYETANO &pid,
     float setpoint_deg,
-    float &frac_acc,                // per-stepper fractional accumulator (must persist across ticks)
-    uint32_t steps_per_rev,         // steps per revolution (integer)
+    float &frac_acc,        // per-stepper fractional accumulator (must persist across ticks)
+    uint32_t steps_per_rev, // steps per revolution (integer)
     float deadband_deg = DEGREE_DEADBAND,
     float min_freq = MIN_FREQ,
     float max_freq = MAX_FREQ)
@@ -48,14 +48,17 @@ static void IRAM_ATTR timerinterrupt(void *arg)
 
     // PID output interpreted as desired frequency (Hz)
     float u = pid.computedU(error);
+    printf("U: %f\n", u);
 
     // magnitude of frequency and clamp
     float freq = fabsf(u);
-    if (freq < min_freq) freq = min_freq;
-    if (freq > max_freq) freq = max_freq;
+    if (freq < min_freq)
+        freq = min_freq;
+    if (freq > max_freq)
+        freq = max_freq;
 
     // dt is global (microseconds) from definitions.h — convert to seconds
-    float dt_s = ((float)dt) / 1e6f;
+    float dt_s = ((float)dt);
 
     // Floating number of steps that should be produced this tick
     float steps_float = freq * dt_s;
@@ -73,8 +76,9 @@ static void IRAM_ATTR timerinterrupt(void *arg)
 
     // Convert steps to degrees for this tick, keep sign according to error
     float degrees_to_move = (float)steps_to_issue * deg_per_step;
-    if (error < 0.0f) degrees_to_move = -degrees_to_move;
-
+    if (error < 0.0f)
+        degrees_to_move = -degrees_to_move;
+    printf("Frecuency: %f\n", freq);
     // Command movement for this small chunk
     stp.moveDegrees(degrees_to_move, (uint32_t)freq);
 
@@ -107,9 +111,10 @@ extern "C" void app_main(void)
 
     timer.startPeriodic(dt);
 
-    // PID: sample time in milliseconds (dt in microseconds -> dt/1000)
-    PID_STEPPER.setup(PID_GAINS, (int)(dt / 1000000));
 
+    // Setup PID with dt directly in microseconds
+    PID_STEPPER.setup(PID_GAINS, dt); // dt is already in microseconds!
+    PID_STEPPER.setULimit(MAX_FREQ);  // Set to 1000 Hz (or whatever MAX_FREQ is)
 
     // start test: lower spindle first
     Current_state = LOWER_SPINDLE;
@@ -127,9 +132,11 @@ extern "C" void app_main(void)
         len = UART.available();
         if (len > 0)
         {
-            if (len > (int)sizeof(Buffer) - 1) len = sizeof(Buffer) - 1;
+            if (len > (int)sizeof(Buffer) - 1)
+                len = sizeof(Buffer) - 1;
             int r = UART.read(Buffer, len);
-            if (r > 0) Buffer[r] = '\0';
+            if (r > 0)
+                Buffer[r] = '\0';
             // optional: parse commands: e.g., sscanf(Buffer, "%d,%f", &mode, &ref);
         }
 
@@ -189,9 +196,9 @@ extern "C" void app_main(void)
             elapsed_visc_us = esp_timer_get_time() - visc_start_time;
             if (elapsed_visc_us >= 5ULL * 1000 * 1000) // 5 seconds
             {
-                visco1.setTargetSpeed(0.0f);        // stop viscometer
+                visco1.setTargetSpeed(0.0f);            // stop viscometer
                 pump_start_time = esp_timer_get_time(); // start pump timer
-                Pump.setSpeed(60.0f);               // start pump
+                Pump.setSpeed(60.0f);                   // start pump
                 Current_state = DOSE_WATER;
             }
             break;

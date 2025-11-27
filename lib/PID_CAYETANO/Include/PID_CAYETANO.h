@@ -1,3 +1,4 @@
+// PID_CAYETANO.h
 #ifndef __PID_CAYETANO_H__
 #define __PID_CAYETANO_H__
 
@@ -8,12 +9,14 @@ private:
     float _Ki;
     float _Kd;
     float _dt;
-    float prev_error = 0.0f;
-    float integral = 0.0f;
+    float _u_limit;      // NEW: configurable output limit
+    float prev_error;
+    float integral;
 
 public:
     PID_CAYETANO();
-    void setup(float Gains[3], float dt);
+    void setup(float Gains[3], float dt_us);
+    void setULimit(float ul);  // NEW: set output limit (Hz)
     float computedU(float error);
     void reset();
 };
