@@ -166,7 +166,7 @@ extern "C" void app_main(void)
         case LOWER_SPINDLE:
         {
             // example target (keep same conversion you used earlier)
-            float target = -2.0f * 360.0f / 0.8f;
+            float target = -4.0f * 360.0f / 0.8f;
             bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, target, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
 
             if (!moving)
