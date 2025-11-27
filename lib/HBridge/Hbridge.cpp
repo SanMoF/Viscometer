@@ -11,7 +11,7 @@ void HBridge::setup(uint8_t pwm_pin[], uint8_t pwm_channel[], TimerConfig* motor
 void HBridge::setSpeed(float speed)
 {
     if (speed > 100.0f) speed = 100.0f;
-    else if (speed < -100.0f) speed = -100.0f;
+    if (speed < -100.0f) speed = -100.0f;
 
     if (speed > 0.0f)
     {
