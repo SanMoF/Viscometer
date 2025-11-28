@@ -55,7 +55,7 @@ enum ViscometerState
     // LabVIEW shows: "Homing all axes"
     // ESP: home rotation stepper + vertical screw stepper.
     // Telemetry: motor_pos_rot, motor_pos_z, homing_ok.
-DETECTION,
+    DETECTION,
     // -------------------------------------------------------------------------
     // SAMPLE IDENTIFICATION
     // -------------------------------------------------------------------------
@@ -173,6 +173,16 @@ DETECTION,
     // Telemetry: calibration_progress, calibration_ok
 };
 
+// ---------- Color tag globals ----------
+// ---------- Color globals (no enums) ----------
+uint8_t Rcal_last = 0;
+uint8_t Gcal_last = 0;
+uint8_t Bcal_last = 0;
+
+// detected_color: 0 = unknown, 1 = WHITE, 2 = BLUE, 3 = RED
+volatile uint8_t detected_color = 0;
+
+
 // ============================================================================
 // GLOBAL OBJECTS
 // ============================================================================
@@ -186,11 +196,17 @@ PID_CAYETANO PID_STEPPER;
 TCS34725 Color_sensor;
 Ultrasonic US_Sensor;
 
-
 // Consts or variable definitions
 float PID_GAINS[3] = {20.0f, 0.0f, 0.0f};
 uint16_t R, G, B, C;
 uint32_t STEPS_PER_REV = 400;
+// ---------- Per-stepper fractional accumulators ----------
+float frac_acc_up = 0.0f;
+float frac_acc_rot = 0.0f; // unused here but kept for symmetry
+
+// ---------- Persistent timestamps (microseconds) ----------
+uint64_t visc_start_time = 0; // when viscometer measurement started
+uint64_t pump_start_time = 0; // when pump dosing started
 
 // Useful variables
 // per-stepper fractional accumulators (one per stepper you use)
@@ -231,7 +247,6 @@ uint8_t Stepper_UP_CH = 2;
 uint8_t Stepper_ROT_CH = 3;
 uint8_t pump_ch[2] = {4, 5};
 uint8_t trig_CH = 6;
-
 
 // ============================================================================
 // PWM TIMER CONFIGURATIONS

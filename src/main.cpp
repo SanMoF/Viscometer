@@ -8,14 +8,6 @@ static void IRAM_ATTR timerinterrupt(void *arg)
     timer.setInterrupt();
 }
 
-// ---------- Per-stepper fractional accumulators ----------
-float frac_acc_up = 0.0f;
-float frac_acc_rot = 0.0f; // unused here but kept for symmetry
-
-// ---------- Persistent timestamps (microseconds) ----------
-uint64_t visc_start_time = 0; // when viscometer measurement started
-uint64_t pump_start_time = 0; // when pump dosing started
-
 // ---------- Incremental Step_W_PID ----------
 // Issues integer steps-per-tick based on frequency from PID and preserves fractional remainder.
 // Returns true while still moving, false when target reached (deadband).
@@ -87,6 +79,164 @@ bool Step_W_PID(
 
     return true; // still moving
 }
+// ----------------------------------------------------------------------------
+// color_sampling_step()
+// Non-blocking sampling + averaging + calibration + 5s polling wait.
+// Returns true when sampling + polling finished (Rcal_last/Gcal_last/Bcal_last ready).
+// Call repeatedly from your state machine while in READ_COLOR_TAG.
+// ----------------------------------------------------------------------------
+bool color_sampling_step()
+{
+    // Config (ajusta si quieres)
+    const uint64_t SAMPLE_WINDOW_US = 5000000ULL;  // 5 s sampling window
+    const uint64_t SAMPLE_INTERVAL_US = 100000ULL; // 100 ms between samples
+    const uint64_t POLL_WAIT_US = 5000000ULL;      // 5 s extra wait (user requested)
+
+    // calibration endpoints (usa tus valores medidos si cambian)
+    const uint32_t C_black = 455U;
+    const uint16_t R_black = 195;
+    const uint16_t G_black = 154;
+    const uint16_t B_black = 81;
+
+    const uint32_t C_white = 7086U;
+    const uint16_t R_white = 3231U;
+    const uint16_t G_white = 3097U;
+    const uint16_t B_white = 2297U;
+
+    // estado estático (persiste entre llamadas)
+    static uint64_t window_start_us = 0;
+    static uint64_t last_sample_us = 0;
+    static uint64_t window_done_us = 0; // time when sampling finished
+    static uint32_t n_samples = 0;
+    static uint64_t sumC = 0;
+    static uint64_t sumR = 0;
+    static uint64_t sumG = 0;
+    static uint64_t sumB = 0;
+
+    uint64_t now_us = esp_timer_get_time();
+
+    // Si no iniciamos la ventana, arrancamos
+    if (window_start_us == 0)
+    {
+        window_start_us = now_us;
+        last_sample_us = 0;
+        n_samples = 0;
+        sumC = sumR = sumG = sumB = 0;
+        window_done_us = 0;
+        printf("color_sampling_step: sampling window started (%.3f s)\n", SAMPLE_WINDOW_US / 1e6f);
+    }
+
+    // Si aún no hemos terminado la ventana de muestreo:
+    if (window_done_us == 0)
+    {
+        // muestreo periódico
+        if (last_sample_us == 0 || (now_us - last_sample_us) >= SAMPLE_INTERVAL_US)
+        {
+            // lee raw (globales C,R,G,B son usados en tu proyecto)
+            Color_sensor.readRaw(C, R, G, B);
+
+            sumC += (uint32_t)C;
+            sumR += (uint32_t)R;
+            sumG += (uint32_t)G;
+            sumB += (uint32_t)B;
+            n_samples++;
+
+            last_sample_us = now_us;
+            printf("color_sampling_step: sample %lu -> C=%u R=%u G=%u B=%u\n", n_samples, C, R, G, B);
+        }
+
+        // comprobar final de ventana
+        if ((now_us - window_start_us) >= SAMPLE_WINDOW_US)
+        {
+            if (n_samples == 0)
+            {
+                // no se tomaron muestras; reiniciamos la ventana para reintentar
+                window_start_us = 0;
+                last_sample_us = 0;
+                return false;
+            }
+
+            // promedios
+            uint32_t avgC = (uint32_t)((sumC + n_samples / 2) / n_samples);
+            uint32_t avgR = (uint32_t)((sumR + n_samples / 2) / n_samples);
+            uint32_t avgG = (uint32_t)((sumG + n_samples / 2) / n_samples);
+            uint32_t avgB = (uint32_t)((sumB + n_samples / 2) / n_samples);
+
+            printf("color_sampling_step: averaged raw -> C=%lu R=%lu G=%lu B=%lu (n=%lu)\n",
+                   avgC, avgR, avgG, avgB, n_samples);
+
+            // calibración a 0..255 usando endpoints
+            int denomR = (int)R_white - (int)R_black;
+            int denomG = (int)G_white - (int)G_black;
+            int denomB = (int)B_white - (int)B_black;
+
+            int r_temp = 0, g_temp = 0, b_temp = 0;
+            if (denomR > 0)
+            {
+                float ratio = ((float)((int)avgR - (int)R_black)) / (float)denomR;
+                r_temp = (int)lroundf(ratio * 255.0f);
+            }
+            if (denomG > 0)
+            {
+                float ratio = ((float)((int)avgG - (int)G_black)) / (float)denomG;
+                g_temp = (int)lroundf(ratio * 255.0f);
+            }
+            if (denomB > 0)
+            {
+                float ratio = ((float)((int)avgB - (int)B_black)) / (float)denomB;
+                b_temp = (int)lroundf(ratio * 255.0f);
+            }
+
+            // clamp
+            if (r_temp < 0)
+                r_temp = 0;
+            else if (r_temp > 255)
+                r_temp = 255;
+            if (g_temp < 0)
+                g_temp = 0;
+            else if (g_temp > 255)
+                g_temp = 255;
+            if (b_temp < 0)
+                b_temp = 0;
+            else if (b_temp > 255)
+                b_temp = 255;
+
+            // guardar resultados en globals (listas para otros estados)
+            Rcal_last = (uint8_t)r_temp;
+            Gcal_last = (uint8_t)g_temp;
+            Bcal_last = (uint8_t)b_temp;
+
+            printf("color_sampling_step: calibrated -> R:%u G:%u B:%u\n", Rcal_last, Gcal_last, Bcal_last);
+
+            // marcar tiempo de finadlización de muestreo para comenzar el polling
+            window_done_us = now_us;
+
+            // liberamos variables de acumulación (pero mantenemos window_done_us)
+            last_sample_us = 0;
+            n_samples = 0;
+            sumC = sumR = sumG = sumB = 0;
+        }
+        // aún en muestreo: no terminado
+        return false;
+    }
+
+    // Si llegamos aquí window_done_us != 0 => estamos en periodo de polling (espera 5s)
+    if ((now_us - window_done_us) >= POLL_WAIT_US)
+    {
+        // resetear todo el estado para la próxima vez y retornar finished=true
+        window_start_us = 0;
+        last_sample_us = 0;
+        window_done_us = 0;
+        n_samples = 0;
+        sumC = sumR = sumG = sumB = 0;
+
+        // Indica que el proceso completo terminó (puedes avanzar de estado)
+        return true;
+    }
+
+    // todavía esperando polling
+    return false;
+}
 
 // ============================================================================
 // app_main
@@ -109,6 +259,8 @@ extern "C" void app_main(void)
     timer.setup(timerinterrupt, "MainTimer");
     visco1.setup(Motor_Pins, motor_ch, Encoder_PINs, &Motor_Timer, dt, ADC_PIN);
 
+    Color_sensor.begin(I2C_NUM_0, 0x29);
+
     // Stepper & pump setup
     Stepper_Up.setup(STEPPER_UP_PWM_PIN, STEPPER_UP_DIR_PIN, Stepper_UP_CH, &PWM_STEPPER_UP_TIMER, STEPS_PER_REV);
     Stepper_Rot.setup(STEPPER_ROT_PWM_PIN, STEPPER_ROT_DIR_PIN, Stepper_ROT_CH, &PWM_STEPPER_ROT_TIMER, STEPS_PER_REV);
@@ -124,7 +276,7 @@ extern "C" void app_main(void)
     PID_STEPPER.setULimit(MAX_FREQ);  // Set to 1000 Hz (or whatever MAX_FREQ is)
 
     // start test: lower spindle first
-    Current_state = DETECTION;
+    Current_state = READ_COLOR_TAG;
     ref = 0.0f;
 
     while (1)
@@ -196,90 +348,74 @@ extern "C" void app_main(void)
         }
         case READ_COLOR_TAG:
         {
-            // single-sample read (you can replace with averaging if you want)
-            Color_sensor.readRaw(C, R, G, B);
-
-            // --- calibration endpoints (replace these with your measured values) ---
-            const uint32_t C_black = 455U;
-            const uint16_t R_black = 284U;
-            const uint16_t G_black = 225U;
-            const uint16_t B_black = 158U;
-
-            const uint32_t C_white = 7086U;
-            const uint16_t R_white = 3231U;
-            const uint16_t G_white = 3097U;
-            const uint16_t B_white = 2297U;
-
-            // --- safe denominators (use int to avoid unsigned underflow) ---
-            int denomR = (int)R_white - (int)R_black;
-            int denomG = (int)G_white - (int)G_black;
-            int denomB = (int)B_white - (int)B_black;
-
-            // --- compute scaled values as ints (use float for ratio) ---
-            int r_temp = 0;
-            int g_temp = 0;
-            int b_temp = 0;
-
-            if (denomR > 0)
+     
+            if (color_sampling_step())
             {
-                float ratio = ((float)((int)R - (int)R_black)) / (float)denomR;
-                r_temp = (int)lroundf(ratio * 255.0f);
+                Current_state = INDICATE_COLOR_LED;
             }
-            else
-            {
-                r_temp = 0;
-            }
-
-            if (denomG > 0)
-            {
-                float ratio = ((float)((int)G - (int)G_black)) / (float)denomG;
-                g_temp = (int)lroundf(ratio * 255.0f);
-            }
-            else
-            {
-                g_temp = 0;
-            }
-
-            if (denomB > 0)
-            {
-                float ratio = ((float)((int)B - (int)B_black)) / (float)denomB;
-                b_temp = (int)lroundf(ratio * 255.0f);
-            }
-            else
-            {
-                b_temp = 0;
-            }
-
-            // clamp to 0..255
-            if (r_temp < 0)
-                r_temp = 0;
-            else if (r_temp > 255)
-                r_temp = 255;
-            if (g_temp < 0)
-                g_temp = 0;
-            else if (g_temp > 255)
-                g_temp = 255;
-            if (b_temp < 0)
-                b_temp = 0;
-            else if (b_temp > 255)
-                b_temp = 255;
-
-            uint8_t Rcal = (uint8_t)r_temp;
-            uint8_t Gcal = (uint8_t)g_temp;
-            uint8_t Bcal = (uint8_t)b_temp;
-
-            // print calibrated and raw values (use PRIu macros for fixed-width types)
-            printf("Calibrated ------ R:%u G:%u B:%u\n", Rcal, Gcal, Bcal);
-            printf("RAW  ------ C:%u R:%u G:%u B:%u\n",
-                   C, R, G, B);
-
             break;
         }
 
         case INDICATE_COLOR_LED:
-            (void)0;
-            
+        {
+            // Clasificación usando solo ifs y umbrales razonables
+            // Umbrales iniciales: ajustar en campo si es necesario
+            const uint8_t HIGH_TH = 200;    // si los tres > HIGH_TH -> blanco
+            const float DOM_FACTOR = 1.25f; // dominante si 25% mayor
+            const uint8_t NOISE_FLOOR = 50; // mínimo para considerarlo significativo
+
+            // inicialmente unknown (0)
+            detected_color = 0;
+
+            // WHITE: los tres canales altos
+            if (Rcal_last >= HIGH_TH && Gcal_last >= HIGH_TH && Bcal_last >= HIGH_TH)
+            {
+                detected_color = 1; // WHITE
+            }
+            else
+            {
+                // RED: rojo dominante y por encima de ruido
+                if ((float)Rcal_last > (float)Gcal_last * DOM_FACTOR &&
+                    (float)Rcal_last > (float)Bcal_last * DOM_FACTOR &&
+                    Rcal_last > NOISE_FLOOR)
+                {
+                    detected_color = 3; // RED
+                }
+                // BLUE: azul dominante y por encima de ruido
+                else if ((float)Bcal_last > (float)Rcal_last * DOM_FACTOR &&
+                         (float)Bcal_last > (float)Gcal_last * DOM_FACTOR &&
+                         Bcal_last > NOISE_FLOOR)
+                {
+                    detected_color = 2; // BLUE
+                }
+                else
+                {
+                    detected_color = 0; // UNKNOWN
+                }
+            }
+
+            // Imprimir resultado usando el string indicado
+            if (detected_color == 1)
+            {
+                printf("INDICATE_COLOR_LED: Detected WHITE\n");
+            }
+            else if (detected_color == 2)
+            {
+                printf("INDICATE_COLOR_LED: Detected BLUE\n");
+            }
+            else if (detected_color == 3)
+            {
+                printf("INDICATE_COLOR_LED: Detected RED\n");
+            }
+            else
+            {
+                printf("INDICATE_COLOR_LED: Detected UNKNOWN\n");
+            }
+
+            // avanzar al siguiente estado
+            Current_state = MOVE_TO_MEASURE_POS;
             break;
+        }
 
         case MOVE_TO_MEASURE_POS:
             (void)0;
