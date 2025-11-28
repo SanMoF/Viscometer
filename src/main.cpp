@@ -108,16 +108,16 @@ extern "C" void app_main(void)
 
     // If you have a Pump object declared in definitons.h:
     Pump.setup(Pump_PIns, pump_ch, &Motor_Timer);
+    US_Sensor.setup(echo, trig, trig_CH, US_Timer);
 
     timer.startPeriodic(dt);
-
 
     // Setup PID with dt directly in microseconds
     PID_STEPPER.setup(PID_GAINS, dt); // dt is already in microseconds!
     PID_STEPPER.setULimit(MAX_FREQ);  // Set to 1000 Hz (or whatever MAX_FREQ is)
 
     // start test: lower spindle first
-    Current_state = LOWER_SPINDLE;
+    Current_state = DETECTION;
     ref = 0.0f;
 
     while (1)
@@ -157,7 +157,36 @@ extern "C" void app_main(void)
         case HOMING:
             (void)0;
             break;
+        case DETECTION:
+        {
+            static uint32_t last_measure = 0;
+            uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
 
+            if (now - last_measure >= 100)
+            {
+                float distance = US_Sensor.getDistance() / 10.0f;
+
+                // Simple debug output (can't access private _echo_time)
+                printf("DETECTION: distance=%.2f cm\n", distance);
+
+                last_measure = now;
+
+                if (distance > 0.1f && distance < 10.0f)
+                {
+                    printf("✓ Object detected at %.2f cm! Moving to LOWER_SPINDLE\n", distance);
+                    Current_state = LOWER_SPINDLE;
+                }
+                else if (distance == 0.0f)
+                {
+                    printf("  WARNING: No echo received (distance = 0)\n");
+                }
+                else
+                {
+                    printf("  Waiting... (need distance < 10 cm)\n");
+                }
+            }
+            break;  
+        }
         case READ_COLOR_TAG:
             Color_sensor.readRaw(C, R, G, B);
             break;
@@ -173,7 +202,7 @@ extern "C" void app_main(void)
         case LOWER_SPINDLE:
         {
             // example target (keep same conversion you used earlier)
-            float target = -4*1500/3.3;//-3*20000/2.6;
+            float target = -4 * 1500 / 3.3; //-3*20000/2.6;
             bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, target, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
 
             if (!moving)

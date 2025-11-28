@@ -18,6 +18,7 @@
 #include "SimpleUART.h"
 #include "SimpleADC.h"
 #include "Hbridge.h"
+#include "Ultrasonic.h"
 
 #include "Stepper.h"
 #include "QuadratureEncoder.h"
@@ -54,7 +55,7 @@ enum ViscometerState
     // LabVIEW shows: "Homing all axes"
     // ESP: home rotation stepper + vertical screw stepper.
     // Telemetry: motor_pos_rot, motor_pos_z, homing_ok.
-
+DETECTION,
     // -------------------------------------------------------------------------
     // SAMPLE IDENTIFICATION
     // -------------------------------------------------------------------------
@@ -183,12 +184,13 @@ HBridge Pump;
 SimpleUART UART(115200);
 PID_CAYETANO PID_STEPPER;
 TCS34725 Color_sensor;
+Ultrasonic US_Sensor;
+
 
 // Consts or variable definitions
 float PID_GAINS[3] = {20.0f, 0.0f, 0.0f};
 uint16_t R, G, B, C;
 uint32_t STEPS_PER_REV = 400;
-
 
 // Useful variables
 // per-stepper fractional accumulators (one per stepper you use)
@@ -219,12 +221,17 @@ uint8_t Encoder_PINs[2] = {16, 17};
 uint8_t Motor_Pins[2] = {14, 27};
 uint8_t Pump_PIns[2] = {23, 26};
 uint8_t ADC_PIN = 34;
+// 3. ADD these pin definitions (after ADC_PIN):
+uint8_t trig = 12;
+uint8_t echo = 13;
 
 // PWM CHANNELS
 uint8_t motor_ch[2] = {0, 1};
 uint8_t Stepper_UP_CH = 2;
 uint8_t Stepper_ROT_CH = 3;
 uint8_t pump_ch[2] = {4, 5};
+uint8_t trig_CH = 6;
+
 
 // ============================================================================
 // PWM TIMER CONFIGURATIONS
@@ -245,6 +252,11 @@ static TimerConfig PWM_STEPPER_ROT_TIMER{
 static TimerConfig Motor_Timer{
     .timer = LEDC_TIMER_0,
     .frequency = 1000,
+    .bit_resolution = LEDC_TIMER_10_BIT,
+    .mode = LEDC_LOW_SPEED_MODE};
+static TimerConfig US_Timer{
+    .timer = LEDC_TIMER_2, // Use TIMER_2 (Motor_Timer uses TIMER_0, which conflicts with Stepper_Up but works)
+    .frequency = 50,
     .bit_resolution = LEDC_TIMER_10_BIT,
     .mode = LEDC_LOW_SPEED_MODE};
 

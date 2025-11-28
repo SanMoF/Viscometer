@@ -28,14 +28,13 @@ void Ultrasonic::setup(uint8_t gpio_echo, uint8_t gpio_trig, uint8_t ch_trig, Ti
                          { static_cast<Ultrasonic *>(arg)->handler(); }, this);
 }
 
-float Ultrasonic::getDistance() // mm/us
+float Ultrasonic::getDistance() // mm
 {
     return 0.343f * _echo_time / 2;
 }
 
 void Ultrasonic::handler()
 {
-
     _states[0] = gpio_get_level(_gpio_echo);
     if (_states[0] > _states[1])
         _prev_micros = esp_timer_get_time();

@@ -1,25 +1,31 @@
-#ifndef __ULTRASONIC_H__
-#define __ULTRASONIC_H__
+// ============================================================================
+// Ultrasonic.h - REVERT TO ORIGINAL (that worked)
+// ============================================================================
+#ifndef ULTRASONIC_H
+#define ULTRASONIC_H
 
-#include <driver/gpio.h>
-#include <esp_timer.h>
-#include <esp_attr.h>
-#include <SimplePWM.h>
+#include "SimplePWM.h"
+#include "driver/gpio.h"
+#include "esp_timer.h"
 
 class Ultrasonic
 {
+private:
+    SimplePWM trigger;
+    gpio_num_t _gpio_echo;
+    uint64_t _prev_micros = 0;
+    uint64_t _echo_time = 0;
+    uint8_t _states[2] = {0, 0};
+
 public:
     Ultrasonic();
     ~Ultrasonic();
+    
+    // BACK TO ORIGINAL - pass by value like before
     void setup(uint8_t gpio_echo, uint8_t gpio_trig, uint8_t ch_trig, TimerConfig timer_config);
+    
     float getDistance();
-
-private:
-    SimplePWM trigger;
-    void IRAM_ATTR handler();
-    gpio_num_t _gpio_echo;
-    volatile int64_t _prev_micros, _echo_time;
-    volatile uint8_t _states[2];
+    void handler();
 };
 
-#endif // __ULTRASONIC_H__
+#endif // ULTRASONIC_H
