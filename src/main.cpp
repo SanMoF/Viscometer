@@ -156,69 +156,87 @@ extern "C" void app_main(void)
             (void)0;
             break;
 
-       case READ_COLOR_TAG:
-{
-    // single-sample read (you can replace with averaging if you want)
-    Color_sensor.readRaw(C, R, G, B);
+        case READ_COLOR_TAG:
+        {
+            // single-sample read (you can replace with averaging if you want)
+            Color_sensor.readRaw(C, R, G, B);
 
-    // --- calibration endpoints (replace these with your measured values) ---
-    const uint32_t C_black = 455U;
-    const uint16_t R_black = 284U;
-    const uint16_t G_black = 225U;
-    const uint16_t B_black = 158U;
+            // --- calibration endpoints (replace these with your measured values) ---
+            const uint32_t C_black = 455U;
+            const uint16_t R_black = 284U;
+            const uint16_t G_black = 225U;
+            const uint16_t B_black = 158U;
 
-    const uint32_t C_white = 7086U;
-    const uint16_t R_white = 3231U;
-    const uint16_t G_white = 3097U;
-    const uint16_t B_white = 2297U;
+            const uint32_t C_white = 7086U;
+            const uint16_t R_white = 3231U;
+            const uint16_t G_white = 3097U;
+            const uint16_t B_white = 2297U;
 
-    // --- safe denominators (use int to avoid unsigned underflow) ---
-    int denomR = (int)R_white - (int)R_black;
-    int denomG = (int)G_white - (int)G_black;
-    int denomB = (int)B_white - (int)B_black;
+            // --- safe denominators (use int to avoid unsigned underflow) ---
+            int denomR = (int)R_white - (int)R_black;
+            int denomG = (int)G_white - (int)G_black;
+            int denomB = (int)B_white - (int)B_black;
 
-    // --- compute scaled values as ints (use float for ratio) ---
-    int r_temp = 0;
-    int g_temp = 0;
-    int b_temp = 0;
+            // --- compute scaled values as ints (use float for ratio) ---
+            int r_temp = 0;
+            int g_temp = 0;
+            int b_temp = 0;
 
-    if (denomR > 0) {
-        float ratio = ((float)((int)R - (int)R_black)) / (float)denomR;
-        r_temp = (int)lroundf(ratio * 255.0f);
-    } else {
-        r_temp = 0;
-    }
+            if (denomR > 0)
+            {
+                float ratio = ((float)((int)R - (int)R_black)) / (float)denomR;
+                r_temp = (int)lroundf(ratio * 255.0f);
+            }
+            else
+            {
+                r_temp = 0;
+            }
 
-    if (denomG > 0) {
-        float ratio = ((float)((int)G - (int)G_black)) / (float)denomG;
-        g_temp = (int)lroundf(ratio * 255.0f);
-    } else {
-        g_temp = 0;
-    }
+            if (denomG > 0)
+            {
+                float ratio = ((float)((int)G - (int)G_black)) / (float)denomG;
+                g_temp = (int)lroundf(ratio * 255.0f);
+            }
+            else
+            {
+                g_temp = 0;
+            }
 
-    if (denomB > 0) {
-        float ratio = ((float)((int)B - (int)B_black)) / (float)denomB;
-        b_temp = (int)lroundf(ratio * 255.0f);
-    } else {
-        b_temp = 0;
-    }
+            if (denomB > 0)
+            {
+                float ratio = ((float)((int)B - (int)B_black)) / (float)denomB;
+                b_temp = (int)lroundf(ratio * 255.0f);
+            }
+            else
+            {
+                b_temp = 0;
+            }
 
-    // clamp to 0..255
-    if (r_temp < 0) r_temp = 0; else if (r_temp > 255) r_temp = 255;
-    if (g_temp < 0) g_temp = 0; else if (g_temp > 255) g_temp = 255;
-    if (b_temp < 0) b_temp = 0; else if (b_temp > 255) b_temp = 255;
+            // clamp to 0..255
+            if (r_temp < 0)
+                r_temp = 0;
+            else if (r_temp > 255)
+                r_temp = 255;
+            if (g_temp < 0)
+                g_temp = 0;
+            else if (g_temp > 255)
+                g_temp = 255;
+            if (b_temp < 0)
+                b_temp = 0;
+            else if (b_temp > 255)
+                b_temp = 255;
 
-    uint8_t Rcal = (uint8_t)r_temp;
-    uint8_t Gcal = (uint8_t)g_temp;
-    uint8_t Bcal = (uint8_t)b_temp;
+            uint8_t Rcal = (uint8_t)r_temp;
+            uint8_t Gcal = (uint8_t)g_temp;
+            uint8_t Bcal = (uint8_t)b_temp;
 
-    // print calibrated and raw values (use PRIu macros for fixed-width types)
-    printf("Calibrated ------ R:%u G:%u B:%u\n", Rcal, Gcal, Bcal);
-    printf("RAW  ------ C:%u R:%u G:%u B:%u\n",
-           C, R, G, B);
+            // print calibrated and raw values (use PRIu macros for fixed-width types)
+            printf("Calibrated ------ R:%u G:%u B:%u\n", Rcal, Gcal, Bcal);
+            printf("RAW  ------ C:%u R:%u G:%u B:%u\n",
+                   C, R, G, B);
 
-    break;
-}
+            break;
+        }
 
         case INDICATE_COLOR_LED:
             (void)0;
