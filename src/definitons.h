@@ -239,23 +239,23 @@ uint8_t trig_CH = 6;
 static TimerConfig PWM_STEPPER_UP_TIMER{
     .timer = LEDC_TIMER_0,
     .frequency = 650,
-    .bit_resolution = LEDC_TIMER_10_BIT,
+    .bit_resolution = LEDC_TIMER_8_BIT,
     .mode = LEDC_LOW_SPEED_MODE};
 
 static TimerConfig PWM_STEPPER_ROT_TIMER{
     .timer = LEDC_TIMER_1,
     .frequency = 650,
-    .bit_resolution = LEDC_TIMER_10_BIT,
+    .bit_resolution = LEDC_TIMER_8_BIT,
     .mode = LEDC_LOW_SPEED_MODE};
 
 // Make this GLOBAL instead of local to app_main()
 static TimerConfig Motor_Timer{
-    .timer = LEDC_TIMER_0,
+    .timer = LEDC_TIMER_2,
     .frequency = 1000,
     .bit_resolution = LEDC_TIMER_10_BIT,
     .mode = LEDC_LOW_SPEED_MODE};
 static TimerConfig US_Timer{
-    .timer = LEDC_TIMER_2, // Use TIMER_2 (Motor_Timer uses TIMER_0, which conflicts with Stepper_Up but works)
+    .timer = LEDC_TIMER_3, // Use TIMER_2 (Motor_Timer uses TIMER_0, which conflicts with Stepper_Up but works)
     .frequency = 50,
     .bit_resolution = LEDC_TIMER_10_BIT,
     .mode = LEDC_LOW_SPEED_MODE};

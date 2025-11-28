@@ -93,6 +93,13 @@ bool Step_W_PID(
 // ============================================================================
 extern "C" void app_main(void)
 {
+    // app_main (al inicio, una vez)
+    if (gpio_install_isr_service(ESP_INTR_FLAG_IRAM) != ESP_OK)
+    {
+        // Si ya está instalado, gpio_install_isr_service devuelve error; ignorar o loguear
+        printf("gpio_isr_service already installed or error\n");
+    }
+
     esp_task_wdt_deinit();
 
     // compute integer steps-per-rev from STEPPER_DEGREES_PER_STEP
@@ -185,7 +192,7 @@ extern "C" void app_main(void)
                     printf("  Waiting... (need distance < 10 cm)\n");
                 }
             }
-            break;  
+            break;
         }
         case READ_COLOR_TAG:
             Color_sensor.readRaw(C, R, G, B);
