@@ -413,7 +413,7 @@ extern "C" void app_main(void)
             }
 
             // avanzar al siguiente estado
-            Current_state = MOVE_TO_MEASURE_POS;
+            Current_state = LOWER_SPINDLE;
             break;
         }
 
