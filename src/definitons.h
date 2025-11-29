@@ -200,13 +200,24 @@ Ultrasonic US_Sensor;
 float PID_GAINS[3] = {20.0f, 0.0f, 0.0f};
 uint16_t R, G, B, C;
 uint32_t STEPS_PER_REV = 400;
+
+float target_viscocity;
+
 // ---------- Per-stepper fractional accumulators ----------
 float frac_acc_up = 0.0f;
-float frac_acc_rot = 0.0f; // unused here but kept for symmetry
+float frac_acc_rot = 0.0f;
 
 // ---------- Persistent timestamps (microseconds) ----------
-uint64_t visc_start_time = 0; // when viscometer measurement started
-uint64_t pump_start_time = 0; // when pump dosing started
+uint64_t visc_start_time = 0;
+uint64_t pump_start_time = 0;
+uint64_t stir_start_time = 0;
+uint64_t hold_start_time = 0;
+
+// ---------- Viscosity adjustment tracking ----------
+int adjustment_iterations = 0;
+const int MAX_ADJUSTMENT_ITERATIONS = 3;
+
+float Viscocity_NO_DIl,Viscocity_10_DIl,Viscocity_25_DIl;
 
 // Useful variables
 // per-stepper fractional accumulators (one per stepper you use)
