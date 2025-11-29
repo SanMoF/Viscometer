@@ -65,9 +65,6 @@ bool Step_W_PID(
     return true;
 }
 
-// ----------------------------------------------------------------------------
-// color_sampling_step() - Non-blocking color sensing
-// ----------------------------------------------------------------------------
 bool color_sampling_step()
 {
     const uint64_t SAMPLE_WINDOW_US = 5000000ULL;  // 5s sampling
