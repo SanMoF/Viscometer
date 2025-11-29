@@ -276,7 +276,7 @@ extern "C" void app_main(void)
     PID_STEPPER.setULimit(MAX_FREQ);  // Set to 1000 Hz (or whatever MAX_FREQ is)
 
     // start test: lower spindle first
-    Current_state = READ_COLOR_TAG;
+    Current_state = DETECTION;
     ref = 0.0f;
 
     while (1)
@@ -333,7 +333,7 @@ extern "C" void app_main(void)
                 if (distance > 0.1f && distance < 10.0f)
                 {
                     printf("✓ Object detected at %.2f cm! Moving to LOWER_SPINDLE\n", distance);
-                    Current_state = LOWER_SPINDLE;
+                    Current_state = READ_COLOR_TAG;
                 }
                 else if (distance == 0.0f)
                 {
@@ -450,7 +450,7 @@ extern "C" void app_main(void)
                 visco1.setTargetSpeed(0.0f);            // stop viscometer
                 pump_start_time = esp_timer_get_time(); // start pump timer
                 Pump.setSpeed(60.0f);                   // start pump
-                Current_state = DOSE_WATER;
+                Current_state = RAISE_SPINDLE;
             }
             break;
         }
