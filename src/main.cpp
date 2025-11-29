@@ -8,8 +8,6 @@ static void IRAM_ATTR timerinterrupt(void *arg)
     timer.setInterrupt();
 }
 
-
-
 // ---------- Incremental Step_W_PID ----------
 bool Step_W_PID(
     Stepper &stp,
@@ -76,12 +74,10 @@ bool color_sampling_step()
     const uint64_t SAMPLE_INTERVAL_US = 100000ULL; // 100ms between samples
     const uint64_t POLL_WAIT_US = 5000000ULL;      // 5s extra wait
 
-    const uint32_t C_black = 455U;
     const uint16_t R_black = 195;
     const uint16_t G_black = 154;
     const uint16_t B_black = 81;
 
-    const uint32_t C_white = 7086U;
     const uint16_t R_white = 3231U;
     const uint16_t G_white = 3097U;
     const uint16_t B_white = 2297U;
@@ -463,7 +459,7 @@ extern "C" void app_main(void)
             {
                 printf("Hold delay complete, re-measuring viscosity (spindle stays down)\n");
                 visc_start_time = esp_timer_get_time();
-                visco1.setTargetSpeed(176.47f); // Start measurement immediately
+                visco1.setTargetSpeed(176.47f);    // Start measurement immediately
                 Current_state = MEASURE_VISCOSITY; // Go back to measure
             }
             break;
