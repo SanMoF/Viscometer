@@ -212,6 +212,8 @@ uint64_t visc_start_time = 0;
 uint64_t pump_start_time = 0;
 uint64_t stir_start_time = 0;
 uint64_t hold_start_time = 0;
+static float rot_saved_pos_deg = 0.0f;
+
 
 // ---------- Viscosity adjustment tracking ----------
 int adjustment_iterations = 0;
