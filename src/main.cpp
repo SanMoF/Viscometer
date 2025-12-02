@@ -234,7 +234,7 @@ extern "C" void app_main(void)
 
     Stepper_Up.setup(STEPPER_UP_PWM_PIN, STEPPER_UP_DIR_PIN, Stepper_UP_CH, &PWM_STEPPER_UP_TIMER, STEPS_PER_REV);
     Stepper_Rot.setup(STEPPER_ROT_PWM_PIN, STEPPER_ROT_DIR_PIN, Stepper_ROT_CH, &PWM_STEPPER_ROT_TIMER, STEPS_PER_REV);
-    STOP_BAND.setup(PIN_STOP_BAND, GPO);
+
     Pump.setup(Pump_PIns, pump_ch, &Motor_Timer);
     US_Sensor.setup(echo, trig, trig_CH, US_Timer);
 
@@ -288,7 +288,6 @@ extern "C" void app_main(void)
                 if (distance > 0.1f && distance < 10.0f)
                 {
                     printf("✓ Object detected at %.2f cm! Moving to READ_COLOR_TAG\n", distance);
-                    STOP_BAND.set(1);
                     Current_state = READ_COLOR_TAG;
                 }
                 else if (distance == 0.0f)
@@ -415,8 +414,8 @@ extern "C" void app_main(void)
             if (!moving)
             {
                 visc_start_time = esp_timer_get_time();
-                visco1.setTargetSpeed(176.47f);
-                printf("Spindle lowered, starting viscometer measurement\n");
+                visco1.setTargetSpeed(176.47f); // ~30 RPM target
+                printf("Spindle lowered, starting viscometer measurement at 30 RPM\n");
                 Current_state = MEASURE_VISCOSITY;
             }
             break;
@@ -471,9 +470,9 @@ extern "C" void app_main(void)
             if (elapsed_pump_us >= 2300000)
             {
                 Pump.setSpeed(0.0f);
-                printf("Dosing complete, starting high RPM stir\n");
+                printf("Dosing complete, starting high RPM stir at ~130 RPM\n");
                 stir_start_time = esp_timer_get_time();
-                visco1.setTargetSpeed(100.0f);
+                visco1.setTargetSpeed(764.71f); // ~130 RPM target (130 / 0.17)
                 Current_state = STIR_HIGH_RPM;
             }
             break;
@@ -499,9 +498,9 @@ extern "C" void app_main(void)
             elapsed_hold_us = esp_timer_get_time() - hold_start_time;
             if (elapsed_hold_us >= 30000000)
             {
-                printf("Hold delay complete, re-measuring viscosity (spindle stays down)\n");
+                printf("Hold delay complete, re-measuring viscosity at 30 RPM (spindle stays down)\n");
                 visc_start_time = esp_timer_get_time();
-                visco1.setTargetSpeed(176.47f);
+                visco1.setTargetSpeed(176.47f); // ~30 RPM target
                 Current_state = MEASURE_VISCOSITY;
             }
             break;
@@ -510,8 +509,6 @@ extern "C" void app_main(void)
         case ACCEPT_SAMPLE:
         {
             printf("=== SAMPLE ACCEPTED ===\n");
-            STOP_BAND.set(0);
-
             Current_state = MOVE_TO_CLEAN_POS;
             break;
         }
@@ -519,8 +516,6 @@ extern "C" void app_main(void)
         case REJECT_SAMPLE:
         {
             printf("=== SAMPLE REJECTED ===\n");
-            STOP_BAND.set(0);
-
             Current_state = MOVE_TO_CLEAN_POS;
             break;
         }
@@ -565,7 +560,7 @@ extern "C" void app_main(void)
                     rot_target_deg = CLEAN_ROT_TARGET;
                     frac_acc_rot = 0.0f;
                     rotation_started = true;
-                    printf("MOVE_TO_CLEAN_POS: rotating to clean pos from %.3f -> target=%.3f (substage 1)\n",
+                    printf("MOVE_TO_CLEAN_POS: rotating to clean pos from %.3f -> target=%.3f (substage 1)\n", 
                            pos_deg, rot_target_deg);
                 }
 
@@ -591,8 +586,13 @@ extern "C" void app_main(void)
                     if (stir_start_time == 0)
                     {
                         stir_start_time = now_us;
-                        visco1.setTargetSpeed(100.0f);
-                        printf("MOVE_TO_CLEAN_POS: spindle lowered, started clean stir (substage 2)\n");
+                        visco1.setTargetSpeed(588.24f); // ~100 RPM for cleaning
+                        printf("MOVE_TO_CLEAN_POS: spindle lowered, started clean stir at ~100 RPM (substage 2)\n");
+                    }
+                    else
+                    {
+                        // Keep calling measure() to maintain PID control during cleaning
+                        visco1.measure();
                     }
 
                     if ((now_us - stir_start_time) >= CLEAN_STIR_TIME_US)
@@ -629,7 +629,7 @@ extern "C" void app_main(void)
                     rot_target_deg = 0.0f; // Return to measurement position
                     frac_acc_rot = 0.0f;
                     rotation_started = true;
-                    printf("MOVE_TO_CLEAN_POS: rotating back to measure pos from %.3f -> target=0.0 (substage 4)\n",
+                    printf("MOVE_TO_CLEAN_POS: rotating back to measure pos from %.3f -> target=0.0 (substage 4)\n", 
                            pos_deg);
                 }
 
