@@ -1,4 +1,4 @@
-// main.cpp - Integrated state machine with 90° rotation in MOVE_TO_MEASURE_POS
+// main.cpp - Fixed state machine with proper rotation handling
 #include "definitons.h"
 #include <math.h>
 #include <inttypes.h>
@@ -8,7 +8,6 @@ static void IRAM_ATTR timerinterrupt(void *arg)
     timer.setInterrupt();
 }
 
-// Reemplaza tu Step_W_PID con esta versión
 bool Step_W_PID(
     Stepper &stp,
     PID_CAYETANO &pid,
@@ -23,14 +22,13 @@ bool Step_W_PID(
 
     static float last_pos_deg = -99999.0f;
     static int stagnation_count = 0;
-    const int STAGNATION_LIMIT = 10; // si 10 ticks con pasos emitidos y pos no cambia -> abort
+    const int STAGNATION_LIMIT = 10;
 
     int32_t pos_steps = stp.getPosition();
     float pos_deg = (pos_steps * 360.0f) / (float)steps_per_rev;
 
     float error = setpoint_deg - pos_deg;
 
-    // dentro de deadband -> parar y limpiar
     if (fabsf(error) <= deadband_deg)
     {
         stp.forceStop();
@@ -41,7 +39,6 @@ bool Step_W_PID(
     }
 
     float u = pid.computedU(error);
-    // debug: print key values
     printf("Step_W_PID: pos_deg=%.3f set=%.3f err=%.3f U=%.3f\n", pos_deg, setpoint_deg, error, u);
 
     float freq = fabsf(u);
@@ -50,16 +47,13 @@ bool Step_W_PID(
     if (freq > max_freq)
         freq = max_freq;
 
-    // convert dt (microseconds) to seconds
     float dt_s = ((float)dt) / 1e6f;
-
     float steps_float = freq * dt_s;
     frac_acc += steps_float;
 
     int32_t steps_to_issue = (int32_t)floorf(frac_acc);
     if (steps_to_issue <= 0)
     {
-        // no pasos a emitir este tick
         return true;
     }
 
@@ -71,42 +65,33 @@ bool Step_W_PID(
     stp.moveDegrees(degrees_to_move, (uint32_t)freq);
     frac_acc -= (float)steps_to_issue;
 
-    // --- STAGNATION DETECTION ---
-    // Si emitimos pasos y la posición no cambia lo suficiente, incrementar contador.
-    // Si la posición cambia, resetear.
     if (fabsf(pos_deg - last_pos_deg) < (deg_per_step * 0.5f))
     {
-        // prácticamente sin cambio
         stagnation_count++;
         if (stagnation_count >= STAGNATION_LIMIT)
         {
-            printf("Step_W_PID: STAGNATION detected (no pos change after %d ticks). Forcing stop.\n", stagnation_count);
+            printf("Step_W_PID: STAGNATION detected. Forcing stop.\n");
             stp.forceStop();
             frac_acc = 0.0f;
             stagnation_count = 0;
             last_pos_deg = pos_deg;
-            // Retorna false para indicar "no moving" / abort: evita vibración.
             return false;
         }
     }
     else
     {
-        // sí hubo cambio -> reset contador
         stagnation_count = 0;
         last_pos_deg = pos_deg;
     }
 
-    return true; // aún moviéndose
+    return true;
 }
 
-// ----------------------------------------------------------------------------
-// color_sampling_step() - nonblocking sampling + average + 5s poll wait
-// ----------------------------------------------------------------------------
 bool color_sampling_step()
 {
-    const uint64_t SAMPLE_WINDOW_US = 5000000ULL;  // 5s sampling
-    const uint64_t SAMPLE_INTERVAL_US = 100000ULL; // 100ms
-    const uint64_t POLL_WAIT_US = 5000000ULL;      // 5s wait
+    const uint64_t SAMPLE_WINDOW_US = 5000000ULL;
+    const uint64_t SAMPLE_INTERVAL_US = 100000ULL;
+    const uint64_t POLL_WAIT_US = 5000000ULL;
 
     const uint16_t R_black = 195;
     const uint16_t G_black = 154;
@@ -232,9 +217,6 @@ bool color_sampling_step()
     return false;
 }
 
-// ============================================================================
-// app_main
-// ============================================================================
 extern "C" void app_main(void)
 {
     if (gpio_install_isr_service(ESP_INTR_FLAG_IRAM) != ESP_OK)
@@ -244,18 +226,15 @@ extern "C" void app_main(void)
 
     esp_task_wdt_deinit();
 
-    // authoritative steps per rev (assumes 0.225 deg/step -> microstepping = 8 example)
     const uint32_t STEPS_PER_REV = (uint32_t)lroundf(360.0f / 0.225f);
 
-    // Setup peripherals
     timer.setup(timerinterrupt, "MainTimer");
     visco1.setup(Motor_Pins, motor_ch, Encoder_PINs, &Motor_Timer, dt, ADC_PIN);
     Color_sensor.begin(I2C_NUM_0, 0x29);
 
-    // Steppers
     Stepper_Up.setup(STEPPER_UP_PWM_PIN, STEPPER_UP_DIR_PIN, Stepper_UP_CH, &PWM_STEPPER_UP_TIMER, STEPS_PER_REV);
     Stepper_Rot.setup(STEPPER_ROT_PWM_PIN, STEPPER_ROT_DIR_PIN, Stepper_ROT_CH, &PWM_STEPPER_ROT_TIMER, STEPS_PER_REV);
-
+    STOP_BAND.setup(PIN_STOP_BAND, GPO);
     Pump.setup(Pump_PIns, pump_ch, &Motor_Timer);
     US_Sensor.setup(echo, trig, trig_CH, US_Timer);
 
@@ -309,6 +288,7 @@ extern "C" void app_main(void)
                 if (distance > 0.1f && distance < 10.0f)
                 {
                     printf("✓ Object detected at %.2f cm! Moving to READ_COLOR_TAG\n", distance);
+                    STOP_BAND.set(1);
                     Current_state = READ_COLOR_TAG;
                 }
                 else if (distance == 0.0f)
@@ -383,7 +363,7 @@ extern "C" void app_main(void)
             else
             {
                 printf("INDICATE_COLOR_LED: Detected UNKNOWN - Using default\n");
-                target_viscocity = Viscocity_NO_DIl; // Default
+                target_viscocity = Viscocity_NO_DIl;
             }
 
             printf("Target viscosity set to: %.3f\n", target_viscocity);
@@ -394,6 +374,7 @@ extern "C" void app_main(void)
 
         case MOVE_TO_MEASURE_POS:
         {
+            // Measurement position is at 0 degrees
             static bool rotation_started = false;
             static float rot_target_deg = 0.0f;
 
@@ -402,16 +383,12 @@ extern "C" void app_main(void)
                 int32_t pos_steps = Stepper_Rot.getPosition();
                 float pos_deg = (pos_steps * 360.0f) / (float)STEPS_PER_REV;
 
-                const float ROTATION_DEG = 90.0f;        // desired rotation in degrees
-                rot_target_deg = pos_deg + ROTATION_DEG; // relative +90°
-                frac_acc_rot = 0.0f;                     // clear accumulator
+                rot_target_deg = 0.0f; // Measure at 0 degrees
+                frac_acc_rot = 0.0f;
                 rotation_started = true;
 
-                // Guardar la posición objetivo para poder volver después del cleaning
-                rot_saved_pos_deg = rot_target_deg;
-
-                printf("MOVE_TO_MEASURE_POS: start rotation pos_deg=%.3f -> target=%.3f (%.1f deg)\n",
-                       pos_deg, rot_target_deg, ROTATION_DEG);
+                printf("MOVE_TO_MEASURE_POS: start rotation pos_deg=%.3f -> target=%.3f\n",
+                       pos_deg, rot_target_deg);
             }
 
             bool still = Step_W_PID(Stepper_Rot, PID_STEPPER, rot_target_deg,
@@ -422,9 +399,8 @@ extern "C" void app_main(void)
 
             if (!still)
             {
-                // rotation finished
                 printf("MOVE_TO_MEASURE_POS: rotation finished -> moving to LOWER_SPINDLE\n");
-                rotation_started = false; // ready for next time
+                rotation_started = false;
                 Current_state = LOWER_SPINDLE;
             }
             break;
@@ -439,7 +415,7 @@ extern "C" void app_main(void)
             if (!moving)
             {
                 visc_start_time = esp_timer_get_time();
-                visco1.setTargetSpeed(176.47f); // 30 RPM (~180 deg/s)
+                visco1.setTargetSpeed(176.47f);
                 printf("Spindle lowered, starting viscometer measurement\n");
                 Current_state = MEASURE_VISCOSITY;
             }
@@ -453,9 +429,9 @@ extern "C" void app_main(void)
                    visc_read.rpm, visc_read.viscosity, target_viscocity);
 
             elapsed_visc_us = esp_timer_get_time() - visc_start_time;
-            if (elapsed_visc_us >= 5000000) // 5 seconds
+            if (elapsed_visc_us >= 5000000)
             {
-                visco1.setTargetSpeed(0.0f); // Stop viscometer
+                visco1.setTargetSpeed(0.0f);
 
                 float lower_limit = target_viscocity * 0.9f;
                 float upper_limit = target_viscocity * 1.1f;
@@ -492,12 +468,12 @@ extern "C" void app_main(void)
         case DOSE_WATER:
         {
             elapsed_pump_us = esp_timer_get_time() - pump_start_time;
-            if (elapsed_pump_us >= 2300000) // 2.3 seconds
+            if (elapsed_pump_us >= 2300000)
             {
                 Pump.setSpeed(0.0f);
                 printf("Dosing complete, starting high RPM stir\n");
                 stir_start_time = esp_timer_get_time();
-                visco1.setTargetSpeed(100.0f); // example high stirring speed
+                visco1.setTargetSpeed(100.0f);
                 Current_state = STIR_HIGH_RPM;
             }
             break;
@@ -505,10 +481,10 @@ extern "C" void app_main(void)
 
         case STIR_HIGH_RPM:
         {
-            visco1.measure(); // keep PID running
+            visco1.measure();
 
             elapsed_stir_us = esp_timer_get_time() - stir_start_time;
-            if (elapsed_stir_us >= 10000000) // 10 seconds
+            if (elapsed_stir_us >= 10000000)
             {
                 visco1.setTargetSpeed(0.0f);
                 printf("High RPM stir complete, starting hold delay\n");
@@ -517,117 +493,11 @@ extern "C" void app_main(void)
             }
             break;
         }
-        case MOVE_TO_CLEAN_POS:
-        {
-            // Substages:
-            // 0 = rotate to 0deg
-            // 1 = lower spindle + stir for CLEAN_STIR_TIME_US
-            // 2 = rotate back to rot_saved_pos_deg (don't lower)
-            static int substage = 0;
-            static bool rotation_started = false;
-            static float rot_target_deg = 0.0f;
-            const uint64_t CLEAN_STIR_TIME_US = 10ULL * 1000000ULL; // 10s clean stir (ajusta)
-            uint64_t now_us = esp_timer_get_time();
-
-            if (substage == 0)
-            {
-                if (!rotation_started)
-                {
-                    // start rotation to zero position
-                    int32_t pos_steps = Stepper_Rot.getPosition();
-                    float pos_deg = (pos_steps * 360.0f) / (float)STEPS_PER_REV;
-                    rot_target_deg = 0.0f; // go to zero
-                    frac_acc_rot = 0.0f;
-                    rotation_started = true;
-                    printf("MOVE_TO_CLEAN_POS: rotating to zero from %.3f -> target=0.0\n", pos_deg);
-                }
-
-                bool still = Step_W_PID(Stepper_Rot, PID_STEPPER, rot_target_deg,
-                                        frac_acc_rot, STEPS_PER_REV, 1.0f, 20.0f, 200.0f);
-                if (!still)
-                {
-                    rotation_started = false;
-                    // proceed to lower & stir
-                    printf("MOVE_TO_CLEAN_POS: reached zero -> lowering spindle and starting clean stir\n");
-                    // start lowering spindle immediately (non-blocking via existing LOWER_SPINDLE logic)
-                    // We'll reuse LOWER_SPINDLE by going there and set a flag to come back to cleaning flow.
-                    // But to stay self-contained, do the lower here:
-                    float lower_target = -4 * 1500 / 3.3; // same as your LOWER_SPINDLE
-                    // block-less move down using Step_W_PID on Stepper_Up (we'll move to substage 1 and manage timing)
-                    frac_acc_up = 0.0f; // ensure accumulator clean
-                    // mark timestamp to indicate spindle lowered time when we detect it arrived
-                    substage = 1;
-                    // record that we expect to start stir once lower is done; use stir_start_time as marker (0 means not started)
-                    stir_start_time = 0;
-                }
-            }
-            else if (substage == 1)
-            {
-                // move Z down (non-blocking) then start clean stir for CLEAN_STIR_TIME_US
-                float lower_target = -4 * 1500 / 3.3;
-                bool moving_down = Step_W_PID(Stepper_Up, PID_STEPPER, lower_target, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
-                if (!moving_down)
-                {
-                    if (stir_start_time == 0)
-                    {
-                        // start cleaning stir
-                        stir_start_time = now_us;
-                        // set a suitable stir speed; use your earlier setpoint for high rpm (e.g., rpmToSetpoint(130) if helper exists)
-                        // Here we use the value you used before — adapt if you have rpmToSetpoint helper.
-                        visco1.setTargetSpeed(100.0f); // <- ajusta o usa rpmToSetpoint(130.0f)
-                        printf("MOVE_TO_CLEAN_POS: spindle lowered, started clean stir\n");
-                    }
-
-                    // wait until clean stir duration completes
-                    if ((now_us - stir_start_time) >= CLEAN_STIR_TIME_US)
-                    {
-                        // stop stirring
-                        visco1.setTargetSpeed(0.0f);
-                        printf("MOVE_TO_CLEAN_POS: clean stir finished, raising spindle (but will not lower when returning)\n");
-                        // raise spindle back to home (non-blocking)
-                        // reuse Step_W_PID to raise
-                        // set a small target for up = 0.0 (home)
-                        frac_acc_up = 0.0f; // ensure accumulator clean for raising
-                        substage = 2;
-                        rotation_started = false; // ensure rotation flags reset for next stage
-                    }
-                }
-            }
-            else if (substage == 2)
-            {
-                // Ensure spindle is raised before rotating back
-                float raise_target = 0.0f;
-                bool raising = Step_W_PID(Stepper_Up, PID_STEPPER, raise_target, frac_acc_up, STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
-                if (!raising)
-                {
-                    // now rotate back to saved measurement position
-                    if (!rotation_started)
-                    {
-                        int32_t pos_steps = Stepper_Rot.getPosition();
-                        float pos_deg = (pos_steps * 360.0f) / (float)STEPS_PER_REV;
-                        rot_target_deg = rot_saved_pos_deg; // return to saved measurement position
-                        frac_acc_rot = 0.0f;
-                        rotation_started = true;
-                        printf("MOVE_TO_CLEAN_POS: rotating back to measure pos %.3f -> target=%.3f\n", pos_deg, rot_target_deg);
-                    }
-
-                    bool still = Step_W_PID(Stepper_Rot, PID_STEPPER, rot_target_deg, frac_acc_rot, STEPS_PER_REV, 1.0f, 20.0f, 200.0f);
-                    if (!still)
-                    {
-                        rotation_started = false;
-                        substage = 0; // reset for next time
-                        printf("MOVE_TO_CLEAN_POS: returned to measure pos -> moving to MOVE_TO_MEASURE_POS (no lowering)\n");
-                        Current_state = MOVE_TO_MEASURE_POS;
-                    }
-                }
-            }
-            break;
-        }
 
         case STIR_HOLD_DELAY:
         {
             elapsed_hold_us = esp_timer_get_time() - hold_start_time;
-            if (elapsed_hold_us >= 30000000) // 30 seconds
+            if (elapsed_hold_us >= 30000000)
             {
                 printf("Hold delay complete, re-measuring viscosity (spindle stays down)\n");
                 visc_start_time = esp_timer_get_time();
@@ -640,6 +510,8 @@ extern "C" void app_main(void)
         case ACCEPT_SAMPLE:
         {
             printf("=== SAMPLE ACCEPTED ===\n");
+            STOP_BAND.set(0);
+
             Current_state = MOVE_TO_CLEAN_POS;
             break;
         }
@@ -647,7 +519,137 @@ extern "C" void app_main(void)
         case REJECT_SAMPLE:
         {
             printf("=== SAMPLE REJECTED ===\n");
+            STOP_BAND.set(0);
+
             Current_state = MOVE_TO_CLEAN_POS;
+            break;
+        }
+
+        case MOVE_TO_CLEAN_POS:
+        {
+            // Cleaning position is at 45 degrees
+            // Substages: 0=raise, 1=rotate to 45°, 2=lower+stir, 3=raise, 4=rotate to 0°
+            static int substage = 0;
+            static bool rotation_started = false;
+            static float rot_target_deg = 0.0f;
+            const uint64_t CLEAN_STIR_TIME_US = 10ULL * 1000000ULL;
+            uint64_t now_us = esp_timer_get_time();
+
+            const float CLEAN_LOWER_TARGET = -4 * 1500 / 3.3f;
+            const float HOME_TARGET = 0.0f;
+            const float CLEAN_ROT_TARGET = 45.0f;
+
+            switch (substage)
+            {
+            case 0: // Raise spindle to home
+            {
+                frac_acc_up = 0.0f;
+                bool raising = Step_W_PID(Stepper_Up, PID_STEPPER, HOME_TARGET, frac_acc_up,
+                                          STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
+                if (!raising)
+                {
+                    printf("MOVE_TO_CLEAN_POS: spindle raised to home (substage 0 -> 1)\n");
+                    rotation_started = false;
+                    frac_acc_rot = 0.0f;
+                    substage = 1;
+                }
+                break;
+            }
+
+            case 1: // Rotate to 45 degrees (cleaning position)
+            {
+                if (!rotation_started)
+                {
+                    int32_t pos_steps = Stepper_Rot.getPosition();
+                    float pos_deg = (pos_steps * 360.0f) / (float)STEPS_PER_REV;
+                    rot_target_deg = CLEAN_ROT_TARGET;
+                    frac_acc_rot = 0.0f;
+                    rotation_started = true;
+                    printf("MOVE_TO_CLEAN_POS: rotating to clean pos from %.3f -> target=%.3f (substage 1)\n",
+                           pos_deg, rot_target_deg);
+                }
+
+                bool still = Step_W_PID(Stepper_Rot, PID_STEPPER, rot_target_deg,
+                                        frac_acc_rot, STEPS_PER_REV, 1.0f, 20.0f, 200.0f);
+                if (!still)
+                {
+                    rotation_started = false;
+                    printf("MOVE_TO_CLEAN_POS: reached clean rotation (substage 1 -> 2)\n");
+                    frac_acc_up = 0.0f;
+                    stir_start_time = 0;
+                    substage = 2;
+                }
+                break;
+            }
+
+            case 2: // Lower spindle and stir for cleaning
+            {
+                bool moving_down = Step_W_PID(Stepper_Up, PID_STEPPER, CLEAN_LOWER_TARGET, frac_acc_up,
+                                              STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
+                if (!moving_down)
+                {
+                    if (stir_start_time == 0)
+                    {
+                        stir_start_time = now_us;
+                        visco1.setTargetSpeed(100.0f);
+                        printf("MOVE_TO_CLEAN_POS: spindle lowered, started clean stir (substage 2)\n");
+                    }
+
+                    if ((now_us - stir_start_time) >= CLEAN_STIR_TIME_US)
+                    {
+                        visco1.setTargetSpeed(0.0f);
+                        printf("MOVE_TO_CLEAN_POS: clean stir finished (substage 2 -> 3)\n");
+                        frac_acc_up = 0.0f;
+                        substage = 3;
+                    }
+                }
+                break;
+            }
+
+            case 3: // Raise spindle back to home
+            {
+                bool raising = Step_W_PID(Stepper_Up, PID_STEPPER, HOME_TARGET, frac_acc_up,
+                                          STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
+                if (!raising)
+                {
+                    printf("MOVE_TO_CLEAN_POS: spindle raised after cleaning (substage 3 -> 4)\n");
+                    rotation_started = false;
+                    frac_acc_rot = 0.0f;
+                    substage = 4;
+                }
+                break;
+            }
+
+            case 4: // Rotate back to 0 degrees (measurement position)
+            {
+                if (!rotation_started)
+                {
+                    int32_t pos_steps = Stepper_Rot.getPosition();
+                    float pos_deg = (pos_steps * 360.0f) / (float)STEPS_PER_REV;
+                    rot_target_deg = 0.0f; // Return to measurement position
+                    frac_acc_rot = 0.0f;
+                    rotation_started = true;
+                    printf("MOVE_TO_CLEAN_POS: rotating back to measure pos from %.3f -> target=0.0 (substage 4)\n",
+                           pos_deg);
+                }
+
+                bool still = Step_W_PID(Stepper_Rot, PID_STEPPER, rot_target_deg,
+                                        frac_acc_rot, STEPS_PER_REV, 1.0f, 20.0f, 200.0f);
+                if (!still)
+                {
+                    rotation_started = false;
+                    substage = 0; // Reset for next cycle
+                    printf("MOVE_TO_CLEAN_POS: returned to measure pos -> moving to DETECTION\n");
+                    Current_state = DETECTION;
+                }
+                break;
+            }
+
+            default:
+                substage = 0;
+                rotation_started = false;
+                break;
+            }
             break;
         }
 

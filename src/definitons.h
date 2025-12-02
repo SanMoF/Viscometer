@@ -178,6 +178,9 @@ enum ViscometerState
 uint8_t Rcal_last = 0;
 uint8_t Gcal_last = 0;
 uint8_t Bcal_last = 0;
+// file-scope: indicates whether rot_saved_pos_deg contains a valid saved target
+static bool rot_saved_valid = false;
+bool rot_saved_pos_deg; 
 
 // detected_color: 0 = unknown, 1 = WHITE, 2 = BLUE, 3 = RED
 volatile uint8_t detected_color = 0;
@@ -195,6 +198,7 @@ SimpleUART UART(115200);
 PID_CAYETANO PID_STEPPER;
 TCS34725 Color_sensor;
 Ultrasonic US_Sensor;
+SimpleGPIO Failed, STOP_BAND;
 
 // Consts or variable definitions
 float PID_GAINS[3] = {20.0f, 0.0f, 0.0f};
@@ -212,7 +216,6 @@ uint64_t visc_start_time = 0;
 uint64_t pump_start_time = 0;
 uint64_t stir_start_time = 0;
 uint64_t hold_start_time = 0;
-static float rot_saved_pos_deg = 0.0f;
 
 
 // ---------- Viscosity adjustment tracking ----------
@@ -250,6 +253,8 @@ uint8_t Encoder_PINs[2] = {16, 17};
 uint8_t Motor_Pins[2] = {14, 27};
 uint8_t Pump_PIns[2] = {23, 26};
 uint8_t ADC_PIN = 34;
+uint8_t PIN_STOP_BAND = 15;
+uint8_t PIN_FAILED = 5;
 // 3. ADD these pin definitions (after ADC_PIN):
 uint8_t trig = 12;
 uint8_t echo = 13;
