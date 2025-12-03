@@ -25,7 +25,7 @@ void Viscometer::setup(uint8_t motorPins[2],
     // Kp = 2.0 (proportional gain - responds to current error)
     // Ki = 0.5 (integral gain - eliminates steady-state error)
     // Kd = 0.05 (derivative gain - dampens oscillations)
-    float gains[3] = {2.0f, 0.5f, 0.05f};
+    float gains[3] = {0.5f, 1.0f, 0.0f};
     pid.setup(gains, (float)dt);
     pid.setULimit(100.0f); // Limit output to ±100%
     
