@@ -1,4 +1,4 @@
-// main.cpp - Fixed state machine with proper rotation handling
+// main.cpp - State machine with Drying Station
 #include "definitons.h"
 #include <math.h>
 #include <inttypes.h>
@@ -39,7 +39,6 @@ bool Step_W_PID(
     }
 
     float u = pid.computedU(error);
-    printf("Step_W_PID: pos_deg=%.3f set=%.3f err=%.3f U=%.3f\n", pos_deg, setpoint_deg, error, u);
 
     float freq = fabsf(u);
     if (freq < min_freq)
@@ -61,7 +60,6 @@ bool Step_W_PID(
     if (error < 0.0f)
         degrees_to_move = -degrees_to_move;
 
-    printf("Step_W_PID: issuing %ld steps -> %.3f deg @ freq=%.1f Hz\n", steps_to_issue, degrees_to_move, freq);
     stp.moveDegrees(degrees_to_move, (uint32_t)freq);
     frac_acc -= (float)steps_to_issue;
 
@@ -135,7 +133,6 @@ bool color_sampling_step()
             n_samples++;
 
             last_sample_us = now_us;
-            printf("color_sampling_step: sample %lu -> C=%u R=%u G=%u B=%u\n", n_samples, C, R, G, B);
         }
 
         if ((now_us - window_start_us) >= SAMPLE_WINDOW_US)
@@ -151,9 +148,6 @@ bool color_sampling_step()
             uint32_t avgR = (uint32_t)((sumR + n_samples / 2) / n_samples);
             uint32_t avgG = (uint32_t)((sumG + n_samples / 2) / n_samples);
             uint32_t avgB = (uint32_t)((sumB + n_samples / 2) / n_samples);
-
-            printf("color_sampling_step: averaged raw -> C=%lu R=%lu G=%lu B=%lu (n=%lu)\n",
-                   avgC, avgR, avgG, avgB, n_samples);
 
             int denomR = (int)R_white - (int)R_black;
             int denomG = (int)G_white - (int)G_black;
@@ -237,6 +231,7 @@ extern "C" void app_main(void)
 
     Pump.setup(Pump_PIns, pump_ch, &Motor_Timer);
     US_Sensor.setup(echo, trig, trig_CH, US_Timer);
+    
 
     timer.startPeriodic(dt);
 
@@ -248,7 +243,11 @@ extern "C" void app_main(void)
     adjustment_iterations = 0;
 
     printf("\n=== VISCOMETER SYSTEM STARTED ===\n");
+    printf("E-STOP monitoring active on GPIO %d (active LOW)\n", E_STOP_PIN);
     printf("Waiting for object detection...\n\n");
+
+    static bool prev_estop_state = false;
+    static ViscometerState state_before_estop = DETECTION;
 
     while (1)
     {
@@ -257,6 +256,33 @@ extern "C" void app_main(void)
             vTaskDelay(pdMS_TO_TICKS(1));
             continue;
         }
+
+        // =====================================================================
+        // CRITICAL: EMERGENCY STOP CHECK - HIGHEST PRIORITY
+        // =====================================================================
+        bool estop_pressed = (E_STOP.get() == 0);
+
+        if (estop_pressed && !prev_estop_state)
+        {
+            printf("\n!!! EMERGENCY STOP BUTTON PRESSED !!!\n");
+            
+            if (Current_state != EMERGENCY_STOP)
+            {
+                state_before_estop = Current_state;
+            }
+            
+            Current_state = EMERGENCY_STOP;
+            prev_estop_state = true;
+        }
+        else if (!estop_pressed && prev_estop_state)
+        {
+            printf("\n>>> E-STOP RELEASED - System remains halted <<<\n");
+            printf(">>> Manual reset required - system will stay in EMERGENCY_STOP <<<\n");
+            prev_estop_state = false;
+        }
+
+        prev_estop_state = estop_pressed;
+        // =====================================================================
 
         uint64_t elapsed_visc_us = 0;
         uint64_t elapsed_pump_us = 0;
@@ -322,7 +348,7 @@ extern "C" void app_main(void)
 
             if (Rcal_last >= HIGH_TH && Gcal_last >= HIGH_TH && Bcal_last >= HIGH_TH)
             {
-                detected_color = 1; // WHITE
+                detected_color = 1;
             }
             else
             {
@@ -330,17 +356,17 @@ extern "C" void app_main(void)
                     (float)Rcal_last > (float)Bcal_last * DOM_FACTOR &&
                     Rcal_last > NOISE_FLOOR)
                 {
-                    detected_color = 3; // RED
+                    detected_color = 3;
                 }
                 else if ((float)Bcal_last > (float)Rcal_last * DOM_FACTOR &&
                          (float)Bcal_last > (float)Gcal_last * DOM_FACTOR &&
                          Bcal_last > NOISE_FLOOR)
                 {
-                    detected_color = 2; // BLUE
+                    detected_color = 2;
                 }
                 else
                 {
-                    detected_color = 0; // UNKNOWN
+                    detected_color = 0;
                 }
             }
 
@@ -373,7 +399,6 @@ extern "C" void app_main(void)
 
         case MOVE_TO_MEASURE_POS:
         {
-            // Measurement position is at 0 degrees
             static bool rotation_started = false;
             static float rot_target_deg = 0.0f;
 
@@ -382,7 +407,7 @@ extern "C" void app_main(void)
                 int32_t pos_steps = Stepper_Rot.getPosition();
                 float pos_deg = (pos_steps * 360.0f) / (float)STEPS_PER_REV;
 
-                rot_target_deg = 0.0f; // Measure at 0 degrees
+                rot_target_deg = 0.0f;
                 frac_acc_rot = 0.0f;
                 rotation_started = true;
 
@@ -392,9 +417,7 @@ extern "C" void app_main(void)
 
             bool still = Step_W_PID(Stepper_Rot, PID_STEPPER, rot_target_deg,
                                     frac_acc_rot, STEPS_PER_REV,
-                                    1.0f,    // deadband degrees
-                                    20.0f,   // min freq Hz
-                                    200.0f); // max freq Hz
+                                    1.0f, 20.0f, 200.0f);
 
             if (!still)
             {
@@ -414,8 +437,8 @@ extern "C" void app_main(void)
             if (!moving)
             {
                 visc_start_time = esp_timer_get_time();
-                visco1.setTargetSpeed(176.47f); // ~30 RPM target
-                printf("Spindle lowered, starting viscometer measurement at 30 RPM\n");
+                visco1.setTargetSpeed(180.0f); // 30 RPM = 180 deg/s
+                printf("Spindle lowered, starting viscometer measurement at 30 RPM (180 deg/s)\n");
                 Current_state = MEASURE_VISCOSITY;
             }
             break;
@@ -424,8 +447,6 @@ extern "C" void app_main(void)
         case MEASURE_VISCOSITY:
         {
             ViscometerReading visc_read = visco1.measure();
-            printf("MEASURE_VISCOSITY: rpm=%.1f visc=%.3f target=%.3f\n",
-                   visc_read.rpm, visc_read.viscosity, target_viscocity);
 
             elapsed_visc_us = esp_timer_get_time() - visc_start_time;
             if (elapsed_visc_us >= 5000000)
@@ -470,9 +491,9 @@ extern "C" void app_main(void)
             if (elapsed_pump_us >= 2300000)
             {
                 Pump.setSpeed(0.0f);
-                printf("Dosing complete, starting high RPM stir at ~130 RPM\n");
+                printf("Dosing complete, starting high RPM stir at 130 RPM (780 deg/s)\n");
                 stir_start_time = esp_timer_get_time();
-                visco1.setTargetSpeed(764.71f); // ~130 RPM target (130 / 0.17)
+                visco1.setTargetSpeed(780.0f); // 130 RPM = 780 deg/s
                 Current_state = STIR_HIGH_RPM;
             }
             break;
@@ -486,7 +507,7 @@ extern "C" void app_main(void)
             if (elapsed_stir_us >= 10000000)
             {
                 visco1.setTargetSpeed(0.0f);
-                printf("High RPM stir complete, starting hold delay\n");
+                printf("High RPM stir complete, motor stopped, starting hold delay\n");
                 hold_start_time = esp_timer_get_time();
                 Current_state = STIR_HOLD_DELAY;
             }
@@ -495,12 +516,14 @@ extern "C" void app_main(void)
 
         case STIR_HOLD_DELAY:
         {
+            visco1.measure(); // Keep motor stopped during hold delay
+            
             elapsed_hold_us = esp_timer_get_time() - hold_start_time;
             if (elapsed_hold_us >= 30000000)
             {
-                printf("Hold delay complete, re-measuring viscosity at 30 RPM (spindle stays down)\n");
+                printf("Hold delay complete, re-measuring viscosity at 30 RPM (180 deg/s)\n");
                 visc_start_time = esp_timer_get_time();
-                visco1.setTargetSpeed(176.47f); // ~30 RPM target
+                visco1.setTargetSpeed(180.0f); // 30 RPM = 180 deg/s
                 Current_state = MEASURE_VISCOSITY;
             }
             break;
@@ -523,7 +546,7 @@ extern "C" void app_main(void)
         case MOVE_TO_CLEAN_POS:
         {
             // Cleaning position is at 45 degrees
-            // Substages: 0=raise, 1=rotate to 45°, 2=lower+stir, 3=raise, 4=rotate to 0°
+            // Substages: 0=raise, 1=rotate to 45°, 2=lower+stir, 3=raise
             static int substage = 0;
             static bool rotation_started = false;
             static float rot_target_deg = 0.0f;
@@ -536,7 +559,7 @@ extern "C" void app_main(void)
 
             switch (substage)
             {
-            case 0: // Raise spindle to home
+            case 0:
             {
                 frac_acc_up = 0.0f;
                 bool raising = Step_W_PID(Stepper_Up, PID_STEPPER, HOME_TARGET, frac_acc_up,
@@ -551,7 +574,7 @@ extern "C" void app_main(void)
                 break;
             }
 
-            case 1: // Rotate to 45 degrees (cleaning position)
+            case 1:
             {
                 if (!rotation_started)
                 {
@@ -560,7 +583,7 @@ extern "C" void app_main(void)
                     rot_target_deg = CLEAN_ROT_TARGET;
                     frac_acc_rot = 0.0f;
                     rotation_started = true;
-                    printf("MOVE_TO_CLEAN_POS: rotating to clean pos from %.3f -> target=%.3f (substage 1)\n", 
+                    printf("MOVE_TO_CLEAN_POS: rotating to clean pos from %.3f -> target=%.3f (substage 1)\n",
                            pos_deg, rot_target_deg);
                 }
 
@@ -577,7 +600,7 @@ extern "C" void app_main(void)
                 break;
             }
 
-            case 2: // Lower spindle and stir for cleaning
+            case 2:
             {
                 bool moving_down = Step_W_PID(Stepper_Up, PID_STEPPER, CLEAN_LOWER_TARGET, frac_acc_up,
                                               STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
@@ -586,12 +609,11 @@ extern "C" void app_main(void)
                     if (stir_start_time == 0)
                     {
                         stir_start_time = now_us;
-                        visco1.setTargetSpeed(588.24f); // ~100 RPM for cleaning
-                        printf("MOVE_TO_CLEAN_POS: spindle lowered, started clean stir at ~100 RPM (substage 2)\n");
+                        visco1.setTargetSpeed(600.0f); // 100 RPM = 600 deg/s
+                        printf("MOVE_TO_CLEAN_POS: spindle lowered, started clean stir at 100 RPM (600 deg/s)\n");
                     }
                     else
                     {
-                        // Keep calling measure() to maintain PID control during cleaning
                         visco1.measure();
                     }
 
@@ -606,30 +628,122 @@ extern "C" void app_main(void)
                 break;
             }
 
-            case 3: // Raise spindle back to home
+            case 3:
             {
                 bool raising = Step_W_PID(Stepper_Up, PID_STEPPER, HOME_TARGET, frac_acc_up,
                                           STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
                 if (!raising)
                 {
-                    printf("MOVE_TO_CLEAN_POS: spindle raised after cleaning (substage 3 -> 4)\n");
+                    printf("MOVE_TO_CLEAN_POS: spindle raised after cleaning -> moving to MOVE_TO_DRY_POS\n");
                     rotation_started = false;
-                    frac_acc_rot = 0.0f;
-                    substage = 4;
+                    substage = 0; // Reset for next cycle
+                    Current_state = MOVE_TO_DRY_POS;
                 }
                 break;
             }
 
-            case 4: // Rotate back to 0 degrees (measurement position)
+            default:
+                substage = 0;
+                rotation_started = false;
+                break;
+            }
+            break;
+        }
+
+        case MOVE_TO_DRY_POS:
+        {
+            // Drying position is at 90 degrees (another +45° from cleaning)
+            // Substages: 0=rotate to 90°, 1=lower+spin, 2=raise, 3=rotate back to 0°
+            static int substage = 0;
+            static bool rotation_started = false;
+            static float rot_target_deg = 0.0f;
+            const uint64_t DRY_SPIN_TIME_US = 15ULL * 1000000ULL; // 15 seconds drying
+            uint64_t now_us = esp_timer_get_time();
+
+            const float DRY_LOWER_TARGET = -4 * 1500 / 3.3f;
+            const float HOME_TARGET = 0.0f;
+            const float DRY_ROT_TARGET = 90.0f;
+
+            switch (substage)
+            {
+            case 0: // Rotate to 90 degrees (drying position)
             {
                 if (!rotation_started)
                 {
                     int32_t pos_steps = Stepper_Rot.getPosition();
                     float pos_deg = (pos_steps * 360.0f) / (float)STEPS_PER_REV;
-                    rot_target_deg = 0.0f; // Return to measurement position
+                    rot_target_deg = DRY_ROT_TARGET;
                     frac_acc_rot = 0.0f;
                     rotation_started = true;
-                    printf("MOVE_TO_CLEAN_POS: rotating back to measure pos from %.3f -> target=0.0 (substage 4)\n", 
+                    printf("MOVE_TO_DRY_POS: rotating to dry pos from %.3f -> target=%.3f (substage 0)\n",
+                           pos_deg, rot_target_deg);
+                }
+
+                bool still = Step_W_PID(Stepper_Rot, PID_STEPPER, rot_target_deg,
+                                        frac_acc_rot, STEPS_PER_REV, 1.0f, 20.0f, 200.0f);
+                if (!still)
+                {
+                    rotation_started = false;
+                    printf("MOVE_TO_DRY_POS: reached dry rotation (substage 0 -> 1)\n");
+                    frac_acc_up = 0.0f;
+                    stir_start_time = 0;
+                    substage = 1;
+                }
+                break;
+            }
+
+            case 1: // Lower spindle and spin for drying
+            {
+                bool moving_down = Step_W_PID(Stepper_Up, PID_STEPPER, DRY_LOWER_TARGET, frac_acc_up,
+                                              STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
+                if (!moving_down)
+                {
+                    if (stir_start_time == 0)
+                    {
+                        stir_start_time = now_us;
+                        visco1.setTargetSpeed(900.0f); // 150 RPM = 900 deg/s for drying
+                        printf("MOVE_TO_DRY_POS: spindle lowered, started drying spin at 150 RPM (900 deg/s)\n");
+                    }
+                    else
+                    {
+                        visco1.measure();
+                    }
+
+                    if ((now_us - stir_start_time) >= DRY_SPIN_TIME_US)
+                    {
+                        visco1.setTargetSpeed(0.0f);
+                        printf("MOVE_TO_DRY_POS: drying spin finished (substage 1 -> 2)\n");
+                        frac_acc_up = 0.0f;
+                        substage = 2;
+                    }
+                }
+                break;
+            }
+
+            case 2: // Raise spindle back to home
+            {
+                bool raising = Step_W_PID(Stepper_Up, PID_STEPPER, HOME_TARGET, frac_acc_up,
+                                          STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
+                if (!raising)
+                {
+                    printf("MOVE_TO_DRY_POS: spindle raised after drying (substage 2 -> 3)\n");
+                    rotation_started = false;
+                    frac_acc_rot = 0.0f;
+                    substage = 3;
+                }
+                break;
+            }
+
+            case 3: // Rotate back to 0 degrees (measurement position)
+            {
+                if (!rotation_started)
+                {
+                    int32_t pos_steps = Stepper_Rot.getPosition();
+                    float pos_deg = (pos_steps * 360.0f) / (float)STEPS_PER_REV;
+                    rot_target_deg = 0.0f;
+                    frac_acc_rot = 0.0f;
+                    rotation_started = true;
+                    printf("MOVE_TO_DRY_POS: rotating back to measure pos from %.3f -> target=0.0 (substage 3)\n",
                            pos_deg);
                 }
 
@@ -639,7 +753,7 @@ extern "C" void app_main(void)
                 {
                     rotation_started = false;
                     substage = 0; // Reset for next cycle
-                    printf("MOVE_TO_CLEAN_POS: returned to measure pos -> moving to DETECTION\n");
+                    printf("MOVE_TO_DRY_POS: returned to measure pos -> moving to DETECTION\n");
                     Current_state = DETECTION;
                 }
                 break;
@@ -674,7 +788,15 @@ extern "C" void app_main(void)
             Stepper_Rot.forceStop();
             Pump.setSpeed(0.0f);
             visco1.setTargetSpeed(0.0f);
-            printf("!!! EMERGENCY STOP ACTIVATED !!!\n");
+            
+            static uint64_t last_estop_msg = 0;
+            uint64_t now_us = esp_timer_get_time();
+            if ((now_us - last_estop_msg) >= 1000000)
+            {
+                printf("!!! EMERGENCY STOP ACTIVE !!! - All systems halted\n");
+                printf("    Release E-STOP button and power cycle system to resume\n");
+                last_estop_msg = now_us;
+            }
             break;
         }
 
