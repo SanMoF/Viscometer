@@ -19,6 +19,7 @@
 #include "SimpleADC.h"
 #include "Hbridge.h"
 #include "Ultrasonic.h"
+#include "Buzzer.h"
 
 #include "Stepper.h"
 #include "QuadratureEncoder.h"
@@ -163,6 +164,8 @@ uint8_t ADC_PIN = 34;
 uint8_t PIN_STOP_BAND = 15;
 uint8_t PIN_FAILED = 5;
 
+uint8_t BUZZER_PIN = 4; // GPIO 4 for buzzer
+uint8_t buzzer_ch = 7;  // PWM channel 7
 // EMERGENCY STOP - Choose your GPIO pin
 // Common choices: GPIO 4, 32, 35, 36, 39 (make sure it's not used elsewhere)
 uint8_t E_STOP_PIN = 32; // ← CHANGE THIS to your actual E-STOP button GPIO
@@ -206,7 +209,75 @@ static TimerConfig US_Timer{
     .frequency = 50,
     .bit_resolution = LEDC_TIMER_10_BIT,
     .mode = LEDC_LOW_SPEED_MODE};
+static TimerConfig Buzzer_Timer{
+    .timer = LEDC_TIMER_0, // Using HIGH SPEED TIMER 0
+    .frequency = 1000,     // Default frequency (will change for notes)
+    .bit_resolution = LEDC_TIMER_10_BIT,
+    .mode = LEDC_HIGH_SPEED_MODE // HIGH SPEED MODE for buzzer
+};
 
+// Musical note frequencies
+#define NOTE_C4  262
+#define NOTE_D4  294
+#define NOTE_E4  330
+#define NOTE_F4  349
+#define NOTE_G4  392
+#define NOTE_A4  440
+#define NOTE_B4  494
+#define NOTE_C5  523
+#define NOTE_D5  587
+#define NOTE_E5  659
+#define NOTE_REST 0
+
+// Mary Had a Little Lamb - Simple and recognizable!
+const int MELODY_MARY[] = {
+    NOTE_E4, NOTE_D4, NOTE_C4, NOTE_D4,  // Ma-ry had a
+    NOTE_E4, NOTE_E4, NOTE_E4,           // lit-tle lamb
+    NOTE_D4, NOTE_D4, NOTE_D4,           // lit-tle lamb
+    NOTE_E4, NOTE_G4, NOTE_G4            // lit-tle lamb
+};
+
+const int DURATIONS_MARY[] = {
+    300, 300, 300, 300,
+    300, 300, 500,
+    300, 300, 500,
+    300, 300, 500
+};
+
+const int LENGTH_MARY = 13;
+
+// Success sound - Ascending scale
+const int MELODY_SUCCESS[] = {
+    NOTE_C4, NOTE_E4, NOTE_G4, NOTE_C5
+};
+
+const int DURATIONS_SUCCESS[] = {
+    200, 200, 200, 400
+};
+
+const int LENGTH_SUCCESS = 4;
+
+// Error sound - Two low beeps
+const int MELODY_ERROR[] = {
+    NOTE_E4, NOTE_REST, NOTE_E4
+};
+
+const int DURATIONS_ERROR[] = {
+    300, 100, 300
+};
+
+const int LENGTH_ERROR = 3;
+
+// Short beep
+const int MELODY_BEEP[] = {
+    NOTE_A4
+};
+
+const int DURATIONS_BEEP[] = {
+    150
+};
+
+const int LENGTH_BEEP = 1;
 static const float STEPPER_DEGREES_PER_STEP = 1.8f;
 
 #endif // __DEFINITIONS_H__

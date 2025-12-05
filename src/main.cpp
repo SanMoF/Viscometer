@@ -211,6 +211,11 @@ bool color_sampling_step()
     return false;
 }
 
+// ============================================================================
+// BUZZER FUNCTIONS - Add at the top of main.cpp, after includes
+// ============================================================================
+
+
 extern "C" void app_main(void)
 {
     if (gpio_install_isr_service(ESP_INTR_FLAG_IRAM) != ESP_OK)
@@ -233,6 +238,25 @@ extern "C" void app_main(void)
     US_Sensor.setup(echo, trig, trig_CH, US_Timer);
     Failed.setup(PIN_FAILED, GPO);
     STOP_BAND.setup(PIN_STOP_BAND, GPO);
+    
+    Buzzer buzz;
+// BUZZER SETUP (already in your code, just verify it's there)
+    buzz.setup(BUZZER_PIN, buzzer_ch, &Buzzer_Timer);
+    printf("✓ Buzzer initialized on GPIO %d (HIGH SPEED MODE)\n", BUZZER_PIN);
+    
+    // Optional: Test buzzer at startup with Mary Had a Little Lamb
+    printf("🎵 Testing buzzer with 'Mary Had a Little Lamb'...\n");
+    buzz.playMelody(MELODY_MARY, DURATIONS_MARY, LENGTH_MARY);
+    
+    // Wait for melody to finish (non-blocking test)
+    uint64_t test_start = esp_timer_get_time();
+    while ((esp_timer_get_time() - test_start) < 5000000) { // 5 seconds max
+        buzz.update();
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    buzz.stop();
+    printf("✓ Buzzer test complete!\n\n");
+
 
     timer.startPeriodic(dt);
 
@@ -257,7 +281,7 @@ extern "C" void app_main(void)
             vTaskDelay(pdMS_TO_TICKS(1));
             continue;
         }
-
+        buzz.update();
         // =====================================================================
         // CRITICAL: EMERGENCY STOP CHECK - HIGHEST PRIORITY
         // =====================================================================
@@ -449,8 +473,12 @@ extern "C" void app_main(void)
         case MEASURE_VISCOSITY:
         {
             ViscometerReading visc_read = visco1.measure();
-
             elapsed_visc_us = esp_timer_get_time() - visc_start_time;
+            static bool melody_started = false;
+if (!melody_started) {
+    buzz.playMelody(MELODY_MARY, DURATIONS_MARY, LENGTH_MARY);
+    melody_started = true;
+}
             if (elapsed_visc_us >= 10000000)
             {
                 visco1.setTargetSpeed(0.0f);
