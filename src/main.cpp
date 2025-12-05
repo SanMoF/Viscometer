@@ -68,7 +68,6 @@ bool Step_W_PID(
         stagnation_count++;
         if (stagnation_count >= STAGNATION_LIMIT)
         {
-            printf("Step_W_PID: STAGNATION detected. Forcing stop.\n");
             stp.forceStop();
             frac_acc = 0.0f;
             stagnation_count = 0;
@@ -117,7 +116,6 @@ bool color_sampling_step()
         n_samples = 0;
         sumC = sumR = sumG = sumB = 0;
         window_done_us = 0;
-        printf("color_sampling_step: sampling window started (5s)\n");
     }
 
     if (window_done_us == 0)
@@ -187,8 +185,6 @@ bool color_sampling_step()
             Gcal_last = (uint8_t)g_temp;
             Bcal_last = (uint8_t)b_temp;
 
-            printf("color_sampling_step: calibrated -> R:%u G:%u B:%u\n", Rcal_last, Gcal_last, Bcal_last);
-
             window_done_us = now_us;
             last_sample_us = 0;
             n_samples = 0;
@@ -219,7 +215,6 @@ extern "C" void app_main(void)
 {
     if (gpio_install_isr_service(ESP_INTR_FLAG_IRAM) != ESP_OK)
     {
-        printf("gpio_isr_service already installed or error\n");
     }
 
     esp_task_wdt_deinit();
@@ -241,10 +236,8 @@ extern "C" void app_main(void)
     Buzzer buzz;
     // BUZZER SETUP (already in your code, just verify it's there)
     buzz.setup(BUZZER_PIN, buzzer_ch, &Buzzer_Timer);
-    printf("✓ Buzzer initialized on GPIO %d (HIGH SPEED MODE)\n", BUZZER_PIN);
 
     // Optional: Test buzzer at startup with Mary Had a Little Lamb
-    printf("🎵 Testing buzzer with 'Mary Had a Little Lamb'...\n");
     buzz.playMelody(MELODY_MARY, DURATIONS_MARY, LENGTH_MARY);
 
     // Wait for melody to finish (non-blocking test)
@@ -255,7 +248,6 @@ extern "C" void app_main(void)
         vTaskDelay(pdMS_TO_TICKS(10));
     }
     buzz.stop();
-    printf("✓ Buzzer test complete!\n\n");
 
     timer.startPeriodic(dt);
 
@@ -265,10 +257,6 @@ extern "C" void app_main(void)
     Current_state = DETECTION;
     ref = 0.0f;
     adjustment_iterations = 0;
-
-    printf("\n=== VISCOMETER SYSTEM STARTED ===\n");
-    printf("E-STOP monitoring active on GPIO %d (active LOW)\n", E_STOP_PIN);
-    printf("Waiting for object detection...\n\n");
 
     static bool prev_estop_state = false;
     static ViscometerState state_before_estop = DETECTION;
@@ -288,7 +276,6 @@ extern "C" void app_main(void)
 
         if (estop_pressed && !prev_estop_state)
         {
-            printf("\n!!! EMERGENCY STOP BUTTON PRESSED !!!\n");
 
             if (Current_state != EMERGENCY_STOP)
             {
@@ -300,8 +287,6 @@ extern "C" void app_main(void)
         }
         else if (!estop_pressed && prev_estop_state)
         {
-            printf("\n>>> E-STOP RELEASED - System remains halted <<<\n");
-            printf(">>> Manual reset required - system will stay in EMERGENCY_STOP <<<\n");
             prev_estop_state = false;
         }
 
@@ -332,22 +317,18 @@ extern "C" void app_main(void)
             if (now - last_measure >= 100)
             {
                 float distance = US_Sensor.getDistance() / 10.0f;
-                printf("DETECTION: distance=%.2f cm\n", distance);
                 last_measure = now;
 
                 if (distance > 0.1f && distance < 10.0f)
                 {
-                    printf("✓ Object detected at %.2f cm! Moving to READ_COLOR_TAG\n", distance);
                     STOP_BAND.set(1);
                     Current_state = READ_COLOR_TAG;
                 }
                 else if (distance == 0.0f)
                 {
-                    printf("  WARNING: No echo received (distance = 0)\n");
                 }
                 else
                 {
-                    printf("  Waiting... (need distance < 10 cm)\n");
                 }
             }
             break;
@@ -357,7 +338,6 @@ extern "C" void app_main(void)
         {
             if (color_sampling_step())
             {
-                printf("Color sampling complete, moving to INDICATE_COLOR_LED\n");
                 Current_state = INDICATE_COLOR_LED;
             }
             break;
@@ -397,26 +377,21 @@ extern "C" void app_main(void)
 
             if (detected_color == 1)
             {
-                printf("INDICATE_COLOR_LED: Detected WHITE - No dilution needed\n");
                 target_viscocity = Viscocity_NO_DIl;
             }
             else if (detected_color == 2)
             {
-                printf("INDICATE_COLOR_LED: Detected BLUE - 10%% dilution\n");
                 target_viscocity = Viscocity_10_DIl;
             }
             else if (detected_color == 3)
             {
-                printf("INDICATE_COLOR_LED: Detected RED - 25%% dilution\n");
                 target_viscocity = Viscocity_25_DIl;
             }
             else
             {
-                printf("INDICATE_COLOR_LED: Detected UNKNOWN - Using default\n");
                 target_viscocity = Viscocity_NO_DIl;
             }
 
-            printf("Target viscosity set to: %.3f\n", target_viscocity);
             adjustment_iterations = 0;
             Current_state = MOVE_TO_MEASURE_POS;
             break;
@@ -435,9 +410,6 @@ extern "C" void app_main(void)
                 rot_target_deg = 0.0f;
                 frac_acc_rot = 0.0f;
                 rotation_started = true;
-
-                printf("MOVE_TO_MEASURE_POS: start rotation pos_deg=%.3f -> target=%.3f\n",
-                       pos_deg, rot_target_deg);
             }
 
             bool still = Step_W_PID(Stepper_Rot, PID_STEPPER, rot_target_deg,
@@ -446,7 +418,6 @@ extern "C" void app_main(void)
 
             if (!still)
             {
-                printf("MOVE_TO_MEASURE_POS: rotation finished -> moving to LOWER_SPINDLE\n");
                 rotation_started = false;
                 Current_state = LOWER_SPINDLE;
             }
@@ -463,7 +434,6 @@ extern "C" void app_main(void)
             {
                 visc_start_time = esp_timer_get_time();
                 visco1.setTargetSpeed(180.0f); // 30 RPM = 180 deg/s
-                printf("Spindle lowered, starting viscometer measurement at 30 RPM (180 deg/s)\n");
                 Current_state = MEASURE_VISCOSITY;
             }
             break;
@@ -479,17 +449,16 @@ extern "C" void app_main(void)
                 buzz.playMelody(MELODY_MARY, DURATIONS_MARY, LENGTH_MARY);
                 melody_started = true;
             }
-            if (elapsed_visc_us >= 10000000)
+            if (elapsed_visc_us >= 15000000)
             {
                 visco1.setTargetSpeed(0.0f);
-
+                viscocity = visc_read.viscosity;
                 float lower_limit = target_viscocity * 0.9f;
                 float upper_limit = target_viscocity * 1.1f;
 
-
                 if (visc_read.viscosity >= lower_limit && visc_read.viscosity <= upper_limit)
                 {
-                    
+
                     Current_state = ACCEPT_SAMPLE;
                 }
                 else
@@ -799,14 +768,25 @@ extern "C" void app_main(void)
             uint64_t now_us = esp_timer_get_time();
             if ((now_us - last_estop_msg) >= 1000000)
             {
- 
+
                 last_estop_msg = now_us;
             }
             break;
         }
-
         default:
             break;
+            int32_t rot_steps = Stepper_Rot.getPosition();
+            int32_t up_steps = Stepper_Up.getPosition();
+            float rot_pos_deg = rot_steps * (360.0f / 400.0f);
+            float up_pos_deg = up_steps * (360.0f / 400.0f);
+            printf("%.2f,%.2f,%.2f,%.2f,%u,%u,%u\n",
+                   target_viscocity,    // float
+                   viscocity, // float
+                   rot_pos_deg,         // float degrees
+                   up_pos_deg,          // float degrees
+                   (unsigned)Rcal_last,
+                   (unsigned)Gcal_last,
+                   (unsigned)Bcal_last);
         }
     }
 }

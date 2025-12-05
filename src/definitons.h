@@ -120,6 +120,8 @@ uint64_t pump_start_time = 0;
 uint64_t stir_start_time = 0;
 uint64_t hold_start_time = 0;
 
+float viscocity ;
+
 // Viscosity adjustment tracking
 int adjustment_iterations = 0;
 const int MAX_ADJUSTMENT_ITERATIONS = 3;
@@ -278,5 +280,6 @@ const int DURATIONS_BEEP[] = {
 
 const int LENGTH_BEEP = 1;
 static const float STEPPER_DEGREES_PER_STEP = 1.8f;
+
 
 #endif // __DEFINITIONS_H__
