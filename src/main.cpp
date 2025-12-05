@@ -432,7 +432,7 @@ extern "C" void app_main(void)
 
         case LOWER_SPINDLE:
         {
-            float target = -4 * 1500 / 3.3;
+            float target = -7 * 1500 / 3.3;
             bool moving = Step_W_PID(Stepper_Up, PID_STEPPER, target, frac_acc_up,
                                      STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
 
