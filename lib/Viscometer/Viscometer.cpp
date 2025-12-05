@@ -64,8 +64,7 @@ ViscometerReading Viscometer::measure()
     static int debug_counter = 0;
     if (++debug_counter >= 100)
     {
-        printf("Viscometer: target=%.1f current=%.1f error=%.1f u=%.1f rpm=%.1f\n",
-               targetSpeed, currentSpeed, error, u, m.rpm);
+        
         debug_counter = 0;
     }
     
@@ -84,6 +83,5 @@ void Viscometer::setTargetSpeed(float speed)
         pid.reset(); // Reset PID integrator to prevent windup
     }
     
-    printf("Viscometer: target speed set to %.1f (%.1f RPM)\n", speed, speed * 0.17f);
 
 }

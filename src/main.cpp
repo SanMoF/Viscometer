@@ -486,25 +486,20 @@ extern "C" void app_main(void)
                 float lower_limit = target_viscocity * 0.9f;
                 float upper_limit = target_viscocity * 1.1f;
 
-                printf("Measurement complete: visc=%.3f, range=[%.3f - %.3f]\n",
-                       visc_read.viscosity, lower_limit, upper_limit);
 
                 if (visc_read.viscosity >= lower_limit && visc_read.viscosity <= upper_limit)
                 {
-                    printf("✓ Viscosity within tolerance - Sample accepted\n");
+                    
                     Current_state = ACCEPT_SAMPLE;
                 }
                 else
                 {
                     if (adjustment_iterations >= MAX_ADJUSTMENT_ITERATIONS)
                     {
-                        printf("✗ Max adjustments reached - Sample rejected\n");
                         Current_state = REJECT_SAMPLE;
                     }
                     else
                     {
-                        printf("⚠ Viscosity out of range - Starting adjustment cycle %d/%d\n",
-                               adjustment_iterations + 1, MAX_ADJUSTMENT_ITERATIONS);
                         adjustment_iterations++;
                         pump_start_time = esp_timer_get_time();
                         Pump.setSpeed(60.0f);
@@ -521,7 +516,6 @@ extern "C" void app_main(void)
             if (elapsed_pump_us >= 2300000)
             {
                 Pump.setSpeed(0.0f);
-                printf("Dosing complete, starting high RPM stir at 130 RPM (780 deg/s)\n");
                 stir_start_time = esp_timer_get_time();
                 visco1.setTargetSpeed(780.0f); // 130 RPM = 780 deg/s
                 Current_state = STIR_HIGH_RPM;
@@ -537,7 +531,6 @@ extern "C" void app_main(void)
             if (elapsed_stir_us >= 10000000)
             {
                 visco1.setTargetSpeed(0.0f);
-                printf("High RPM stir complete, motor stopped, starting hold delay\n");
                 hold_start_time = esp_timer_get_time();
                 Current_state = STIR_HOLD_DELAY;
             }
@@ -551,7 +544,6 @@ extern "C" void app_main(void)
             elapsed_hold_us = esp_timer_get_time() - hold_start_time;
             if (elapsed_hold_us >= 30000000)
             {
-                printf("Hold delay complete, re-measuring viscosity at 30 RPM (180 deg/s)\n");
                 visc_start_time = esp_timer_get_time();
                 visco1.setTargetSpeed(180.0f); // 30 RPM = 180 deg/s
                 Current_state = MEASURE_VISCOSITY;
@@ -561,7 +553,6 @@ extern "C" void app_main(void)
 
         case ACCEPT_SAMPLE:
         {
-            printf("=== SAMPLE ACCEPTED ===\n");
             Failed.set(0);
             STOP_BAND.set(0);
             Current_state = MOVE_TO_CLEAN_POS;
@@ -570,7 +561,6 @@ extern "C" void app_main(void)
 
         case REJECT_SAMPLE:
         {
-            printf("=== SAMPLE REJECTED ===\n");
             Failed.set(1);
             STOP_BAND.set(0);
             Current_state = MOVE_TO_CLEAN_POS;
@@ -600,7 +590,6 @@ extern "C" void app_main(void)
                                           STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
                 if (!raising)
                 {
-                    printf("MOVE_TO_CLEAN_POS: spindle raised to home (substage 0 -> 1)\n");
                     rotation_started = false;
                     frac_acc_rot = 0.0f;
                     substage = 1;
@@ -617,8 +606,6 @@ extern "C" void app_main(void)
                     rot_target_deg = CLEAN_ROT_TARGET;
                     frac_acc_rot = 0.0f;
                     rotation_started = true;
-                    printf("MOVE_TO_CLEAN_POS: rotating to clean pos from %.3f -> target=%.3f (substage 1)\n",
-                           pos_deg, rot_target_deg);
                 }
 
                 bool still = Step_W_PID(Stepper_Rot, PID_STEPPER, rot_target_deg,
@@ -626,7 +613,6 @@ extern "C" void app_main(void)
                 if (!still)
                 {
                     rotation_started = false;
-                    printf("MOVE_TO_CLEAN_POS: reached clean rotation (substage 1 -> 2)\n");
                     frac_acc_up = 0.0f;
                     stir_start_time = 0;
                     substage = 2;
@@ -644,7 +630,6 @@ extern "C" void app_main(void)
                     {
                         stir_start_time = now_us;
                         visco1.setTargetSpeed(600.0f); // 100 RPM = 600 deg/s
-                        printf("MOVE_TO_CLEAN_POS: spindle lowered, started clean stir at 100 RPM (600 deg/s)\n");
                     }
                     else
                     {
@@ -654,7 +639,6 @@ extern "C" void app_main(void)
                     if ((now_us - stir_start_time) >= CLEAN_STIR_TIME_US)
                     {
                         visco1.setTargetSpeed(0.0f);
-                        printf("MOVE_TO_CLEAN_POS: clean stir finished (substage 2 -> 3)\n");
                         frac_acc_up = 0.0f;
                         substage = 3;
                     }
@@ -668,7 +652,6 @@ extern "C" void app_main(void)
                                           STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
                 if (!raising)
                 {
-                    printf("MOVE_TO_CLEAN_POS: spindle raised after cleaning -> moving to MOVE_TO_DRY_POS\n");
                     rotation_started = false;
                     substage = 0; // Reset for next cycle
                     Current_state = MOVE_TO_DRY_POS;
@@ -709,8 +692,6 @@ extern "C" void app_main(void)
                     rot_target_deg = DRY_ROT_TARGET;
                     frac_acc_rot = 0.0f;
                     rotation_started = true;
-                    printf("MOVE_TO_DRY_POS: rotating to dry pos from %.3f -> target=%.3f (substage 0)\n",
-                           pos_deg, rot_target_deg);
                 }
 
                 bool still = Step_W_PID(Stepper_Rot, PID_STEPPER, rot_target_deg,
@@ -718,7 +699,6 @@ extern "C" void app_main(void)
                 if (!still)
                 {
                     rotation_started = false;
-                    printf("MOVE_TO_DRY_POS: reached dry rotation (substage 0 -> 1)\n");
                     frac_acc_up = 0.0f;
                     stir_start_time = 0;
                     substage = 1;
@@ -736,7 +716,6 @@ extern "C" void app_main(void)
                     {
                         stir_start_time = now_us;
                         visco1.setTargetSpeed(900.0f); // 150 RPM = 900 deg/s for drying
-                        printf("MOVE_TO_DRY_POS: spindle lowered, started drying spin at 150 RPM (900 deg/s)\n");
                     }
                     else
                     {
@@ -746,7 +725,6 @@ extern "C" void app_main(void)
                     if ((now_us - stir_start_time) >= DRY_SPIN_TIME_US)
                     {
                         visco1.setTargetSpeed(0.0f);
-                        printf("MOVE_TO_DRY_POS: drying spin finished (substage 1 -> 2)\n");
                         frac_acc_up = 0.0f;
                         substage = 2;
                     }
@@ -760,7 +738,6 @@ extern "C" void app_main(void)
                                           STEPS_PER_REV, DEGREE_DEADBAND, MIN_FREQ, MAX_FREQ);
                 if (!raising)
                 {
-                    printf("MOVE_TO_DRY_POS: spindle raised after drying (substage 2 -> 3)\n");
                     rotation_started = false;
                     frac_acc_rot = 0.0f;
                     substage = 3;
@@ -777,8 +754,6 @@ extern "C" void app_main(void)
                     rot_target_deg = 0.0f;
                     frac_acc_rot = 0.0f;
                     rotation_started = true;
-                    printf("MOVE_TO_DRY_POS: rotating back to measure pos from %.3f -> target=0.0 (substage 3)\n",
-                           pos_deg);
                 }
 
                 bool still = Step_W_PID(Stepper_Rot, PID_STEPPER, rot_target_deg,
@@ -787,7 +762,6 @@ extern "C" void app_main(void)
                 {
                     rotation_started = false;
                     substage = 0; // Reset for next cycle
-                    printf("MOVE_TO_DRY_POS: returned to measure pos -> moving to DETECTION\n");
                     Current_state = DETECTION;
                 }
                 break;
@@ -809,8 +783,6 @@ extern "C" void app_main(void)
 
             if (!moving)
             {
-                printf("RAISE_SPINDLE reached home\n");
-                printf("Cycle complete, returning to DETECTION\n\n");
                 Current_state = DETECTION;
             }
             break;
@@ -827,8 +799,7 @@ extern "C" void app_main(void)
             uint64_t now_us = esp_timer_get_time();
             if ((now_us - last_estop_msg) >= 1000000)
             {
-                printf("!!! EMERGENCY STOP ACTIVE !!! - All systems halted\n");
-                printf("    Release E-STOP button and power cycle system to resume\n");
+ 
                 last_estop_msg = now_us;
             }
             break;
