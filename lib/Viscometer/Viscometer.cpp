@@ -58,7 +58,7 @@ ViscometerReading Viscometer::measure()
     m.rpm = currentSpeed * 0.17f;
     
     // Read viscosity from load sensor (ADC)
-    m.viscosity = ADC.read(ADC_READ_RAW);
+    m.viscosity = 1.7607*ADC.read(ADC_READ_RAW)-1402;
     
     // Debug output every ~100 calls (adjust as needed)
     static int debug_counter = 0;

@@ -10,7 +10,7 @@
 #include "driver/i2c.h"
 #include "esp_timer.h"
 #include "esp_task_wdt.h"
-
+#include "Buzzer.h"
 #include "SimpleTimer.h"
 #include "cmath"
 #include "SimpleGPIO.h"
@@ -19,7 +19,6 @@
 #include "SimpleADC.h"
 #include "Hbridge.h"
 #include "Ultrasonic.h"
-#include "Buzzer.h"
 
 #include "Stepper.h"
 #include "QuadratureEncoder.h"
