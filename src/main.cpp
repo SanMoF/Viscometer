@@ -231,7 +231,8 @@ extern "C" void app_main(void)
 
     Pump.setup(Pump_PIns, pump_ch, &Motor_Timer);
     US_Sensor.setup(echo, trig, trig_CH, US_Timer);
-    
+    Failed.setup(PIN_FAILED, GPO);
+    STOP_BAND.setup(PIN_STOP_BAND, GPO);
 
     timer.startPeriodic(dt);
 
@@ -265,12 +266,12 @@ extern "C" void app_main(void)
         if (estop_pressed && !prev_estop_state)
         {
             printf("\n!!! EMERGENCY STOP BUTTON PRESSED !!!\n");
-            
+
             if (Current_state != EMERGENCY_STOP)
             {
                 state_before_estop = Current_state;
             }
-            
+
             Current_state = EMERGENCY_STOP;
             prev_estop_state = true;
         }
@@ -314,6 +315,7 @@ extern "C" void app_main(void)
                 if (distance > 0.1f && distance < 10.0f)
                 {
                     printf("✓ Object detected at %.2f cm! Moving to READ_COLOR_TAG\n", distance);
+                    STOP_BAND.set(1);
                     Current_state = READ_COLOR_TAG;
                 }
                 else if (distance == 0.0f)
@@ -449,7 +451,7 @@ extern "C" void app_main(void)
             ViscometerReading visc_read = visco1.measure();
 
             elapsed_visc_us = esp_timer_get_time() - visc_start_time;
-            if (elapsed_visc_us >= 5000000)
+            if (elapsed_visc_us >= 10000000)
             {
                 visco1.setTargetSpeed(0.0f);
 
@@ -517,7 +519,7 @@ extern "C" void app_main(void)
         case STIR_HOLD_DELAY:
         {
             visco1.measure(); // Keep motor stopped during hold delay
-            
+
             elapsed_hold_us = esp_timer_get_time() - hold_start_time;
             if (elapsed_hold_us >= 30000000)
             {
@@ -532,6 +534,8 @@ extern "C" void app_main(void)
         case ACCEPT_SAMPLE:
         {
             printf("=== SAMPLE ACCEPTED ===\n");
+            Failed.set(0);
+            STOP_BAND.set(0);
             Current_state = MOVE_TO_CLEAN_POS;
             break;
         }
@@ -539,6 +543,8 @@ extern "C" void app_main(void)
         case REJECT_SAMPLE:
         {
             printf("=== SAMPLE REJECTED ===\n");
+            Failed.set(1);
+            STOP_BAND.set(0);
             Current_state = MOVE_TO_CLEAN_POS;
             break;
         }
@@ -788,7 +794,7 @@ extern "C" void app_main(void)
             Stepper_Rot.forceStop();
             Pump.setSpeed(0.0f);
             visco1.setTargetSpeed(0.0f);
-            
+
             static uint64_t last_estop_msg = 0;
             uint64_t now_us = esp_timer_get_time();
             if ((now_us - last_estop_msg) >= 1000000)
